@@ -1,0 +1,42 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.agesofaether.game'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.agesofaether.game"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    // Point at the shared assets/ directory
+    sourceSets {
+        main {
+            assets.srcDirs = ['../../assets']
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+}
+
+dependencies {
+}

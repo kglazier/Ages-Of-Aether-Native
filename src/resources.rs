@@ -1,0 +1,129 @@
+use bevy::prelude::*;
+use crate::data::EnemyType;
+
+#[derive(Resource)]
+pub struct GameData {
+    pub gold: u32,
+    pub lives: u32,
+    pub max_lives: u32,
+    pub wave_number: u32,
+    pub max_waves: u32,
+}
+
+impl Default for GameData {
+    fn default() -> Self {
+        Self {
+            gold: 220,
+            lives: 20,
+            max_lives: 20,
+            wave_number: 0,
+            max_waves: 10,
+        }
+    }
+}
+
+/// Tracks wave spawning progress.
+#[derive(Resource, Default)]
+pub struct WaveState {
+    pub phase: WavePhase,
+    pub spawn_timer: f32,
+    pub wave_elapsed: f32, // total time since pulse started (for group delays)
+    pub groups: Vec<SpawnGroup>,
+    pub current_group: usize,
+    pub spawned_in_group: u32,
+    pub active_enemies: u32,
+    pub current_pulse: u32,
+    pub pulse_pause_timer: f32,
+}
+
+#[derive(Default, PartialEq)]
+pub enum WavePhase {
+    #[default]
+    Idle,
+    Spawning,
+    PulsePause,
+    Active,
+}
+
+pub struct SpawnGroup {
+    pub enemy_type: EnemyType,
+    pub count: u32,
+    pub interval: f32,
+    pub delay: f32, // seconds before this group starts (relative to pulse start)
+    pub pulse: u32, // which pulse this group belongs to
+}
+
+/// Set by the UI "Send Wave" button; consumed by wave_spawner each frame.
+#[derive(Resource, Default)]
+pub struct WaveButtonPressed(pub bool);
+
+/// Game speed multiplier (1.0, 2.0, or 3.0).
+#[derive(Resource)]
+pub struct GameSpeed(pub f32);
+
+impl Default for GameSpeed {
+    fn default() -> Self {
+        Self(1.0)
+    }
+}
+
+/// Guards OnEnter(Playing) so cleanup+setup only runs on fresh start / restart,
+/// not when resuming from pause.
+#[derive(Resource)]
+pub struct NeedsFreshSetup(pub bool);
+
+impl Default for NeedsFreshSetup {
+    fn default() -> Self {
+        Self(false)
+    }
+}
+
+/// Set by input system when player taps ground — consumed by hero movement.
+#[derive(Resource, Default)]
+pub struct HeroMoveCommand(pub Option<Vec3>);
+
+/// Which hero type is currently active.
+#[derive(Resource)]
+pub struct ActiveHeroType(pub crate::data::HeroType);
+
+impl Default for ActiveHeroType {
+    fn default() -> Self {
+        Self(crate::data::HeroType::SacredMaiden)
+    }
+}
+
+/// Admin/debug unlock flags (runtime only, not persisted).
+#[derive(Resource, Default)]
+pub struct AdminUnlocks {
+    pub all_levels: bool,
+    pub all_heroes: bool,
+}
+
+/// Which level is currently being played (1-indexed).
+#[derive(Resource)]
+pub struct CurrentLevel(pub u32);
+
+impl Default for CurrentLevel {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+/// Cached path waypoints for the current level — avoids re-allocating every frame.
+#[derive(Resource, Default)]
+pub struct LevelPath(pub Vec<Vec3>);
+
+/// What the player has currently selected in the UI.
+#[derive(Resource, Default)]
+pub enum Selection {
+    #[default]
+    None,
+    /// Player clicked an empty build spot — show tower build menu.
+    BuildSpot(Entity),
+    /// Player clicked an existing tower — show upgrade/sell panel.
+    Tower(Entity),
+    /// Player is setting a rally point for an earth tower's golems.
+    SettingRallyPoint(Entity),
+    /// Player clicked on the hero.
+    Hero,
+}
