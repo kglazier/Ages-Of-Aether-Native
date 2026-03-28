@@ -1,12 +1,12 @@
 use bevy::prelude::*;
-use bevy::animation::{AnimationTargetId};
+use bevy::animation::{AnimationTargetId, VariableCurve};
 use crate::components::*;
 use crate::data::*;
 
-/// Tracks walk clip handle for root motion stripping.
+/// Tracks clip handles for root motion stripping. All 4 clips need stripping.
 #[derive(Component)]
-pub struct EnemyWalkClip {
-    pub handle: Handle<AnimationClip>,
+pub struct EnemyClipsNeedStrip {
+    pub handles: Vec<Handle<AnimationClip>>,
     pub stripped: bool,
 }
 
@@ -40,8 +40,8 @@ pub fn setup_enemy_animations(
 
         let stats = enemy_stats(type_id.0);
 
-        // Check if anim_indices are all zero (unconfigured) — force procedural animation
-        let has_configured_indices = stats.anim_indices != [0; 4];
+        // Check if anim_indices are configured (255 = unconfigured sentinel)
+        let has_configured_indices = stats.anim_indices != [255; 4];
 
         if let Some(anim_files) = stats.anim_files {
             // External animation mode (humanoid Mixamo rigs)
@@ -69,11 +69,15 @@ pub fn setup_enemy_animations(
             };
 
             let walk_clip: Handle<AnimationClip> = asset_server.load(format!("{}#Animation0", anim_files[0]));
-            let idle_clip = asset_server.load(format!("{}#Animation0", anim_files[1]));
-            let attack_clip = asset_server.load(format!("{}#Animation0", anim_files[2]));
-            let death_clip = asset_server.load(format!("{}#Animation0", anim_files[3]));
+            let idle_clip: Handle<AnimationClip> = asset_server.load(format!("{}#Animation0", anim_files[1]));
+            let attack_clip: Handle<AnimationClip> = asset_server.load(format!("{}#Animation0", anim_files[2]));
+            let death_clip: Handle<AnimationClip> = asset_server.load(format!("{}#Animation0", anim_files[3]));
 
-            let walk_clip_handle = walk_clip.clone();
+            // Store handles for root motion stripping after clips load
+            let strip_handles = vec![
+                walk_clip.clone(), idle_clip.clone(),
+                attack_clip.clone(), death_clip.clone(),
+            ];
 
             let mut graph = AnimationGraph::new();
             let walk_node = graph.add_clip(walk_clip, 1.0, graph.root);
@@ -93,12 +97,15 @@ pub fn setup_enemy_animations(
                     current: EnemyAnimKind::Walk,
                     player_entity,
                 },
-                EnemyWalkClip { handle: walk_clip_handle, stripped: false },
+                EnemyClipsNeedStrip { handles: strip_handles, stripped: false },
             ));
         } else if has_configured_indices && player_entity.is_some() {
-            // Embedded animation mode (blobs with built-in clips)
+            // Embedded animation mode (animals/dinosaurs with built-in clips)
             let pe = player_entity.unwrap();
             let [walk_idx, idle_idx, attack_idx, death_idx] = stats.anim_indices;
+
+            // Stop any auto-playing animation from the GLB load
+            commands.entity(pe).insert(AnimationPlayer::default());
 
             let walk_clip = asset_server.load(format!("{}#Animation{}", stats.model_path, walk_idx));
             let idle_clip = asset_server.load(format!("{}#Animation{}", stats.model_path, idle_idx));
@@ -122,8 +129,16 @@ pub fn setup_enemy_animations(
                 current: EnemyAnimKind::Walk,
                 player_entity: pe,
             });
+            info!("Embedded anim setup: {:?} indices={:?} walk={:?} atk={:?}",
+                  type_id.0, stats.anim_indices, walk_node, attack_node);
+        } else if has_configured_indices {
+            // Embedded anim indices configured but AnimationPlayer not found yet —
+            // scene is still loading. Retry next frame.
+            info!("Waiting for AnimationPlayer: {:?}", type_id.0);
+            continue;
         } else if children.len() > 0 {
-            // Animal/dinosaur model — use procedural walk animation with leg bones.
+            // Animal/dinosaur model with no configured animations —
+            // use procedural walk animation with leg bones.
             // Replace any auto-created AnimationPlayer with a fresh stopped one
             // so the GLB's default animation doesn't play.
             if let Some(pe) = player_entity {
@@ -172,6 +187,8 @@ pub fn update_enemy_animations(
         };
 
         if desired != anim_state.current {
+            info!("Anim transition: {:?} -> {:?} (player={:?}, atk_node={:?})",
+                  anim_state.current, desired, anim_state.player_entity, anim_state.attack_node);
             anim_state.current = desired;
             if let Ok(mut player) = players.get_mut(anim_state.player_entity) {
                 player.stop_all();
@@ -188,37 +205,70 @@ pub fn update_enemy_animations(
 
 /// Discovers quadruped leg bones by name after the GLTF scene loads.
 /// Looks for bones named FrontLeg.L/R, BackLeg.L/R (or Mixamo equivalents).
+/// Captures bind pose Euler Y/Z so the walk oscillation only replaces the X component.
+/// Retries each frame until the scene hierarchy is populated.
 pub fn discover_leg_bones(
     mut commands: Commands,
     enemies: Query<(Entity, &Children), With<NeedsLegDiscovery>>,
     children_q: Query<&Children>,
     names: Query<&Name>,
+    transforms: Query<&Transform>,
 ) {
     for (enemy_entity, children) in &enemies {
-        let mut leg_bones: Vec<(Entity, f32)> = Vec::new();
+        let mut leg_bones: Vec<(Entity, f32, f32, f32)> = Vec::new();
+        let mut foot_bones: Vec<(Entity, f32, Quat, Vec3)> = Vec::new();
+        let mut named_count = 0u32;
         let mut stack: Vec<Entity> = children.iter().copied().collect();
         while let Some(entity) = stack.pop() {
             if let Ok(name) = names.get(entity) {
+                named_count += 1;
                 let n = name.as_str().to_lowercase();
-                // Non-Mixamo rig (stegosaurus, triceratops, etc.)
-                if n.ends_with("frontleg.l") { leg_bones.push((entity, std::f32::consts::PI)); }
-                else if n.ends_with("frontleg.r") { leg_bones.push((entity, 0.0)); }
-                else if n.ends_with("backleg.l") { leg_bones.push((entity, 0.0)); }
-                else if n.ends_with("backleg.r") { leg_bones.push((entity, std::f32::consts::PI)); }
-                // Mixamo rig (used as quadruped)
-                else if n.ends_with("leftupleg") { leg_bones.push((entity, 0.0)); }
-                else if n.ends_with("rightupleg") { leg_bones.push((entity, std::f32::consts::PI)); }
-                else if n.ends_with("leftarm") { leg_bones.push((entity, std::f32::consts::PI)); }
-                else if n.ends_with("rightarm") { leg_bones.push((entity, 0.0)); }
+
+                // Leg bones (hip/shoulder joints) — Euler X replacement
+                let leg_phase = if n == "frontleg.l" { Some(std::f32::consts::PI) }
+                    else if n == "frontleg.r" { Some(0.0) }
+                    else if n == "backleg.l" { Some(0.0) }
+                    else if n == "backleg.r" { Some(std::f32::consts::PI) }
+                    else if n.ends_with("leftupleg") { Some(0.0) }
+                    else if n.ends_with("rightupleg") { Some(std::f32::consts::PI) }
+                    else if n.ends_with("leftarm") && !n.contains("fore") { Some(std::f32::consts::PI) }
+                    else if n.ends_with("rightarm") && !n.contains("fore") { Some(0.0) }
+                    else { None };
+
+                if let Some(phase_offset) = leg_phase {
+                    let (ez, ey, _ex) = transforms
+                        .get(entity)
+                        .map(|t| t.rotation.to_euler(bevy::math::EulerRot::ZYX))
+                        .unwrap_or((0.0, 0.0, 0.0));
+                    leg_bones.push((entity, phase_offset, ez, ey));
+                }
+
+                // Foot IK-target bones — delta rotation to follow legs
+                let foot_phase = if n == "frontfoot.l" { Some(std::f32::consts::PI) }
+                    else if n == "frontfoot.r" { Some(0.0) }
+                    else if n == "backfoot.l" { Some(0.0) }
+                    else if n == "backfoot.r" { Some(std::f32::consts::PI) }
+                    else { None };
+
+                if let Some(phase_offset) = foot_phase {
+                    let (bind_quat, bind_translation) = transforms
+                        .get(entity)
+                        .map(|t| (t.rotation, t.translation))
+                        .unwrap_or((Quat::IDENTITY, Vec3::ZERO));
+                    foot_bones.push((entity, phase_offset, bind_quat, bind_translation));
+                }
             }
             if let Ok(gc) = children_q.get(entity) {
                 stack.extend(gc.iter());
             }
         }
         if leg_bones.len() >= 4 {
-            commands.entity(enemy_entity).insert(QuadLegBones(leg_bones));
+            info!("Discovered {} leg + {} foot bones for procedural walk", leg_bones.len(), foot_bones.len());
+            commands.entity(enemy_entity).insert(QuadLegBones { legs: leg_bones, feet: foot_bones });
+            commands.entity(enemy_entity).remove::<NeedsLegDiscovery>();
+        } else if named_count >= 4 {
+            commands.entity(enemy_entity).remove::<NeedsLegDiscovery>();
         }
-        commands.entity(enemy_entity).remove::<NeedsLegDiscovery>();
     }
 }
 
@@ -241,85 +291,111 @@ pub fn animate_procedural_walk(
             continue;
         }
 
-        // Scale animation speed with movement speed (stop when blocked)
-        let move_speed = if blocked.is_some() {
+        // Three.js uses a global walkTime shared across all enemies.
+        // Speed determines frequency: sin(walkTime * speed + phase).
+        let move_speed = if blocked.is_some() || dying.is_some() {
             0.0
         } else {
             follower.map(|f| f.speed).unwrap_or(2.0)
         };
+        // Keep per-enemy phase for bob/lean fallback
         anim.phase += dt * move_speed * 4.0;
 
-        // Animate leg bones if discovered
-        if let Some(legs) = quad_legs {
-            let amplitude = 0.35; // ~20 degrees swing
-            for &(bone_entity, phase_offset) in &legs.0 {
+        let walk_time = time.elapsed_secs();
+        let speed = move_speed * 4.0;
+
+        // Animate leg bones — replace outermost X rotation with oscillation (ZYX order).
+        // In glam ZYX, X is outermost = rotation around parent's X axis,
+        // matching Three.js's bone.rotation.x (forward/backward leg swing).
+        if let Some(quad) = quad_legs {
+            let amplitude = 0.45;
+
+            // Leg bones: Euler X replacement (ZYX order so X is outermost = parent-axis swing)
+            for &(bone_entity, phase_offset, bind_ez, bind_ey) in &quad.legs {
                 if let Ok(mut t) = transforms.get_mut(bone_entity) {
-                    t.rotation = Quat::from_rotation_x(
-                        (anim.phase + phase_offset).sin() * amplitude
+                    let osc_x = (walk_time * speed + phase_offset).sin() * amplitude;
+                    t.rotation = Quat::from_euler(
+                        bevy::math::EulerRot::ZYX,
+                        bind_ez,
+                        bind_ey,
+                        osc_x,
                     );
                 }
             }
-        }
 
-        // Bob + lean on the scene root
-        let bob = (anim.phase).sin() * 0.06;
-        let lean = (anim.phase * 0.5).sin() * 0.03;
-        if let Some(&child) = children.iter().next() {
-            if let Ok(mut t) = transforms.get_mut(child) {
-                t.translation.y = bob;
-                t.rotation = Quat::from_rotation_z(lean);
+            // Foot IK-target bones: very small vertical lift to reduce "stuck foot" look.
+            for &(bone_entity, phase_offset, _bind_quat, bind_pos) in &quad.feet {
+                if let Ok(mut t) = transforms.get_mut(bone_entity) {
+                    let swing = (walk_time * speed + phase_offset).sin();
+                    let lift = swing.abs() * 0.015;
+                    t.translation = bind_pos + Vec3::new(0.0, lift, 0.0);
+                }
+            }
+
+            // Body bob
+            if let Some(&child) = children.iter().next() {
+                if let Ok(mut t) = transforms.get_mut(child) {
+                    let bob = (walk_time * speed * 2.0).sin().abs() * 0.15;
+                    t.translation.y = bob;
+                }
             }
         }
-    }
-}
 
-/// Cancel root motion for humanoid enemies using external Mixamo walk animations.
-/// The walk clip moves the character forward — we zero only X/Z of the armature
-/// root each frame, preserving Y so the model doesn't sink into the ground.
-pub fn cancel_enemy_root_motion(
-    enemies: Query<(&Children, &EnemyAnimState), Without<EnemyDying>>,
-    children_q: Query<&Children>,
-    mut transforms: Query<&mut Transform>,
-) {
-    for (children, _anim_state) in &enemies {
-        // The GLTF scene root is the first child; the armature root is inside it.
-        // Zero out X/Z to prevent walk-forward drift, keep Y for ground placement.
-        for &child in children.iter() {
-            if let Ok(grandchildren) = children_q.get(child) {
-                for &gc in grandchildren.iter() {
-                    if let Ok(mut t) = transforms.get_mut(gc) {
-                        t.translation.x = 0.0;
-                        t.translation.z = 0.0;
-                    }
+        // Bob + lean on the scene root — only when no leg bones
+        if quad_legs.is_none() {
+            let bob = (anim.phase).sin() * 0.06;
+            let lean = (anim.phase * 0.5).sin() * 0.03;
+            if let Some(&child) = children.iter().next() {
+                if let Ok(mut t) = transforms.get_mut(child) {
+                    t.translation.y = bob;
+                    t.rotation = Quat::from_rotation_z(lean);
                 }
             }
         }
     }
 }
 
-/// Strips root-bone position tracks from enemy walk clips after they load.
-/// This prevents root motion drift (the walk animation moving the character forward).
-/// Only translation curves are removed — rotation curves are kept for limb movement.
-pub fn strip_enemy_walk_root_motion(
-    mut enemies: Query<&mut EnemyWalkClip>,
+/// Strips root-bone position tracks and all scale tracks from enemy animation clips.
+/// Root bone = bone whose parent is NOT a bone (i.e., Hips under Armature).
+/// This prevents walk-forward drift while keeping limb position tracks for proper animation.
+pub fn strip_enemy_clip_root_motion(
+    mut enemies: Query<&mut EnemyClipsNeedStrip>,
     mut clips: ResMut<Assets<AnimationClip>>,
 ) {
-    // The Hips bone is the root motion source in Mixamo animations
+    // The Hips bone is the root motion source in Mixamo animations.
+    // Its AnimationTargetId is derived from the path: Armature > mixamorig:Hips
     let hips_id = AnimationTargetId::from_names(
         [Name::new("Armature"), Name::new("mixamorig:Hips")].iter(),
     );
 
-    for mut walk_clip in &mut enemies {
-        if walk_clip.stripped { continue; }
-        let handle = walk_clip.handle.clone();
-        if let Some(clip) = clips.get_mut(&handle) {
-            // Remove the Hips bone curves entirely (translation + rotation + scale)
-            // This prevents the walk animation from moving the model
-            if clip.curves_mut().remove(&hips_id).is_some() {
-                info!("Stripped Hips root motion from enemy walk clip");
+    for mut strip in &mut enemies {
+        if strip.stripped { continue; }
+
+        let all_loaded = strip.handles.iter().all(|h| clips.get(h).is_some());
+        if !all_loaded { continue; }
+
+        let handles: Vec<_> = strip.handles.clone();
+        for handle in &handles {
+            if let Some(clip) = clips.get_mut(handle) {
+                // For each bone target in the clip:
+                for (target_id, curves) in clip.curves_mut().iter_mut() {
+                    if *target_id == hips_id {
+                        // Root bone: strip position tracks, keep rotation
+                        // GLTF order: [translation(0), rotation(1), scale(2)]
+                        if curves.len() >= 2 {
+                            let rotation = VariableCurve(curves[1].0.clone_value());
+                            curves.clear();
+                            curves.push(rotation);
+                        }
+                    } else if curves.len() == 3 {
+                        // Non-root bone with 3 curves: strip scale (index 2), keep translation + rotation
+                        curves.truncate(2);
+                    }
+                }
             }
-            walk_clip.stripped = true;
         }
+        info!("Stripped root-bone position + all scale tracks from enemy clips");
+        strip.stripped = true;
     }
 }
 

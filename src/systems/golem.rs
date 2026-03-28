@@ -129,6 +129,7 @@ pub fn spawn_golems(
                     current: golem_hp,
                     max: golem_hp,
                 },
+                crate::components::GameWorldEntity,
             ));
         }
     }

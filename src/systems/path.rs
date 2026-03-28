@@ -5,7 +5,7 @@ use crate::components::*;
 /// Respects slow debuff by reducing effective speed.
 /// Adds procedural animation: bobbing, squash/stretch while moving.
 pub fn move_enemies(
-    mut query: Query<(Entity, &mut Transform, &mut PathFollower, &ModelScale, Option<&SlowDebuff>, Option<&GolemBlocked>, Option<&Flying>, Option<&EnemyAnimState>), With<Enemy>>,
+    mut query: Query<(Entity, &mut Transform, &mut PathFollower, &ModelScale, Option<&SlowDebuff>, Option<&GolemBlocked>, Option<&QuadLegBones>, Option<&EnemyAnimState>), With<Enemy>>,
     time: Res<Time>,
     level_path: Res<crate::resources::LevelPath>,
 ) {
@@ -13,7 +13,7 @@ pub fn move_enemies(
     let last_segment = path.len() - 1;
     let t = time.elapsed_secs();
 
-    for (entity, mut transform, mut follower, model_scale, slow, golem_blocked, flying, anim_state) in &mut query {
+    for (entity, mut transform, mut follower, model_scale, slow, golem_blocked, quad_legs, anim_state) in &mut query {
         if follower.segment >= last_segment {
             continue;
         }
@@ -24,8 +24,8 @@ pub fn move_enemies(
         if golem_blocked.is_some() {
             follower.speed = 0.0;
 
-            // Only do procedural headbutt bob for enemies without skeletal animations
-            if !has_skeletal {
+            // Only do procedural headbutt bob for enemies without skeletal or quad-leg animations
+            if !has_skeletal && quad_legs.is_none() {
                 let phase = entity.index() as f32 * 1.7;
                 let base_scale = model_scale.0;
                 let cycle = (t * 5.0 + phase).sin();
@@ -36,8 +36,7 @@ pub fn move_enemies(
                     base_scale * (1.0 - s),
                     base_scale * (1.0 + s),
                 );
-                let base_y = if flying.is_some() { 2.0 } else { 0.0 };
-                transform.translation.y = base_y + jab * 0.1;
+                transform.translation.y = follower.y_offset + jab * 0.1;
             }
 
             continue;
@@ -75,15 +74,16 @@ pub fn move_enemies(
 
         if has_skeletal {
             // Skeletal animation handles visual quality — just set position
-            let base_y = if flying.is_some() { 2.0 } else { 0.0 };
-            transform.translation = Vec3::new(pos.x + lateral.x, base_y, pos.z + lateral.z);
+            transform.translation = Vec3::new(pos.x + lateral.x, follower.y_offset, pos.z + lateral.z);
+        } else if quad_legs.is_some() {
+            // Quad-leg enemies: leg bones handle animation, no squash/stretch (causes distortion)
+            transform.translation = Vec3::new(pos.x + lateral.x, follower.y_offset, pos.z + lateral.z);
         } else {
             // Procedural animation: bob + squash/stretch
             let phase = entity.index() as f32 * 1.7;
             let bob_speed = effective_speed * 2.5;
-            let base_y = if flying.is_some() { 2.0 } else { 0.0 };
             let bob_y = (t * bob_speed + phase).sin() * 0.15;
-            transform.translation = Vec3::new(pos.x + lateral.x, base_y + bob_y, pos.z + lateral.z);
+            transform.translation = Vec3::new(pos.x + lateral.x, follower.y_offset + bob_y, pos.z + lateral.z);
 
             let base_scale = model_scale.0;
             let squash = (t * bob_speed + phase).sin() * 0.06;

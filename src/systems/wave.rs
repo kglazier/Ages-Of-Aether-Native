@@ -3,6 +3,8 @@ use crate::components::*;
 use crate::data::*;
 use crate::resources::*;
 
+use crate::resources::AUTO_WAVE_DELAY;
+
 /// Minimum pause between pulses (seconds).
 const PULSE_MIN_PAUSE: f32 = 2.0;
 /// Maximum wait between pulses — starts next pulse even if enemies remain.
@@ -189,12 +191,23 @@ fn spawn_enemy(
     let stats = enemy_stats(enemy_type);
     let spawn_pos = level_path.0[0];
     let scaled_speed = stats.speed * speed_mult;
-    let y_offset = if stats.is_flying { 2.0 } else { 0.0 };
+    let y_offset = if stats.is_flying { 2.0 } else {
+        match enemy_type {
+            EnemyType::Stegosaurus => 0.6,
+            EnemyType::Triceratops => 0.5,
+            EnemyType::Caveman => 1.0,
+            EnemyType::Shaman => 0.5,
+            EnemyType::Legionary => 2.0,
+            EnemyType::Medicus => 0.0,
+            _ => 0.0,
+        }
+    };
 
     let scene = asset_server.load(format!("{}#Scene0", stats.model_path));
 
     let mut transform = Transform::from_translation(spawn_pos + Vec3::Y * y_offset)
         .with_scale(Vec3::splat(stats.model_scale));
+    // Note: y_offset is also stored in PathFollower so move_enemies preserves it each frame.
     if stats.rotation_y != 0.0 {
         transform.rotate_y(stats.rotation_y);
     }
@@ -219,6 +232,7 @@ fn spawn_enemy(
                 let norm = ((hash >> 16) & 0x7FFF) as f32 / 32767.0; // 0..1
                 (norm - 0.5) * 0.8 // -0.4..+0.4
             },
+            y_offset,
         },
         ModelScale(stats.model_scale),
         GoldReward(stats.gold_reward),
@@ -246,5 +260,31 @@ fn spawn_enemy(
             radius: 4.0,
             heal_per_second: 5.0,
         });
+    }
+}
+
+/// Ticks the auto-wave countdown. When it reaches zero, presses the wave button.
+pub fn auto_wave_tick(
+    mut auto_wave: ResMut<crate::resources::AutoWave>,
+    wave: Res<WaveState>,
+    game: Res<GameData>,
+    time: Res<Time>,
+    mut wave_btn: ResMut<WaveButtonPressed>,
+) {
+    if !auto_wave.enabled {
+        return;
+    }
+
+    // Only tick during Idle phase (between waves) and when there are waves left
+    if !matches!(wave.phase, WavePhase::Idle) || game.wave_number >= game.max_waves {
+        // Reset countdown so it starts fresh when wave ends
+        auto_wave.countdown = AUTO_WAVE_DELAY;
+        return;
+    }
+
+    auto_wave.countdown -= time.delta_secs();
+    if auto_wave.countdown <= 0.0 {
+        wave_btn.0 = true;
+        auto_wave.countdown = AUTO_WAVE_DELAY;
     }
 }

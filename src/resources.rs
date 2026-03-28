@@ -57,6 +57,18 @@ pub struct SpawnGroup {
 #[derive(Resource, Default)]
 pub struct WaveButtonPressed(pub bool);
 
+/// Auto-wave state: when enabled, automatically starts the next wave after a countdown.
+#[derive(Resource, Default)]
+pub struct AutoWave {
+    pub enabled: bool,
+    /// Countdown timer (seconds) before auto-starting the next wave.
+    /// Only ticks when phase is Idle and enabled is true.
+    pub countdown: f32,
+}
+
+/// Delay before auto-wave starts the next wave (seconds).
+pub const AUTO_WAVE_DELAY: f32 = 5.0;
+
 /// Game speed multiplier (1.0, 2.0, or 3.0).
 #[derive(Resource)]
 pub struct GameSpeed(pub f32);

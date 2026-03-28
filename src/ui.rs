@@ -44,12 +44,14 @@ impl Plugin for UiPlugin {
             ).run_if(in_state(AppState::Playing)),
         );
 
-        // Pause and speed buttons work during Playing state
+        // Pause, speed, and auto-wave buttons work during Playing state
         app.add_systems(
             Update,
             (
                 handle_pause_button,
                 handle_speed_button,
+                handle_auto_wave_button,
+                update_auto_wave_button,
             ).run_if(in_state(AppState::Playing)),
         );
 
@@ -76,7 +78,10 @@ impl Plugin for UiPlugin {
         app.add_systems(OnExit(AppState::MainMenu), cleanup_menu_screen);
 
         // Level select
-        app.add_systems(OnEnter(AppState::LevelSelect), setup_level_select);
+        app.add_systems(OnEnter(AppState::LevelSelect), (
+            setup_level_select,
+            crate::systems::setup::cleanup_game_world,
+        ));
         app.add_systems(Update, (handle_level_select, handle_admin_panel).run_if(in_state(AppState::LevelSelect)));
         app.add_systems(OnExit(AppState::LevelSelect), (cleanup_menu_screen, cleanup_admin_panel));
 
@@ -141,6 +146,10 @@ struct RallyPointPrompt;
 struct WaveButton;
 #[derive(Component)]
 struct WaveButtonText;
+#[derive(Component)]
+struct AutoWaveButton;
+#[derive(Component)]
+struct AutoWaveButtonText;
 #[derive(Component)]
 struct SpeedButton;
 #[derive(Component)]
@@ -266,6 +275,29 @@ fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>) {
                         TextFont { font_size: 20.0, ..default() },
                         TextColor(Color::WHITE),
                         WaveButtonText,
+                    ));
+                });
+            // Auto-wave toggle button
+            parent
+                .spawn((
+                    Button,
+                    AutoWaveButton,
+                    Node {
+                        height: Val::Px(44.0),
+                        padding: UiRect::horizontal(Val::Px(12.0)),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.3, 0.3, 0.4, 0.7)),
+                    BorderRadius::all(Val::Px(6.0)),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Text::new("Auto"),
+                        TextFont { font_size: 20.0, ..default() },
+                        TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                        AutoWaveButtonText,
                     ));
                 });
             // Speed button (1x / 2x / 3x)
@@ -1186,6 +1218,45 @@ fn handle_speed_button(
     }
 }
 
+fn handle_auto_wave_button(
+    interactions: Query<&Interaction, (Changed<Interaction>, With<AutoWaveButton>)>,
+    mut auto_wave: ResMut<AutoWave>,
+) {
+    for interaction in &interactions {
+        if *interaction == Interaction::Pressed {
+            auto_wave.enabled = !auto_wave.enabled;
+            if auto_wave.enabled {
+                auto_wave.countdown = crate::resources::AUTO_WAVE_DELAY;
+            }
+        }
+    }
+}
+
+fn update_auto_wave_button(
+    auto_wave: Res<AutoWave>,
+    wave: Res<WaveState>,
+    mut btn_q: Query<&mut BackgroundColor, With<AutoWaveButton>>,
+    mut text_q: Query<(&mut Text, &mut TextColor), With<AutoWaveButtonText>>,
+) {
+    let Ok(mut bg) = btn_q.get_single_mut() else { return };
+    let Ok((mut text, mut color)) = text_q.get_single_mut() else { return };
+
+    if auto_wave.enabled {
+        bg.0 = Color::srgba(0.15, 0.45, 0.15, 0.9);
+        color.0 = Color::WHITE;
+        // Show countdown when idle and waiting
+        if matches!(wave.phase, WavePhase::Idle) && auto_wave.countdown > 0.0 {
+            text.0 = format!("Auto {:.0}s", auto_wave.countdown.ceil());
+        } else {
+            text.0 = "Auto".into();
+        }
+    } else {
+        bg.0 = Color::srgba(0.3, 0.3, 0.4, 0.7);
+        color.0 = Color::srgb(0.7, 0.7, 0.7);
+        text.0 = "Auto".into();
+    }
+}
+
 fn setup_pause_screen(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
     time.pause();
     commands
@@ -1490,7 +1561,13 @@ struct GameOverRoot;
 #[derive(Component)]
 struct RestartButton;
 
-fn setup_game_over_screen(mut commands: Commands, outcome: Res<GameOutcome>, game: Res<GameData>) {
+#[derive(Component)]
+struct NextLevelButton;
+
+#[derive(Component)]
+struct LevelSelectButton;
+
+fn setup_game_over_screen(mut commands: Commands, outcome: Res<GameOutcome>, game: Res<GameData>, current_level: Res<crate::resources::CurrentLevel>) {
     let title = if outcome.victory { "VICTORY!" } else { "DEFEAT" };
     let title_color = if outcome.victory {
         Color::srgb(1.0, 0.85, 0.0)
@@ -1544,34 +1621,91 @@ fn setup_game_over_screen(mut commands: Commands, outcome: Res<GameOutcome>, gam
                 TextColor(Color::WHITE),
             ));
 
+            // Button row
             parent
-                .spawn((
-                    Button,
-                    RestartButton,
-                    Node {
-                        width: Val::Px(200.0),
-                        height: Val::Px(50.0),
-                        justify_content: JustifyContent::Center,
-                        align_items: AlignItems::Center,
-                        margin: UiRect::top(Val::Px(20.0)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.2, 0.4, 0.2, 0.9)),
-                    BorderRadius::all(Val::Px(8.0)),
-                ))
-                .with_children(|btn| {
-                    btn.spawn((
-                        Text::new("Play Again"),
-                        TextFont { font_size: 24.0, ..default() },
-                        TextColor(Color::WHITE),
-                    ));
+                .spawn(Node {
+                    flex_direction: FlexDirection::Row,
+                    column_gap: Val::Px(16.0),
+                    margin: UiRect::top(Val::Px(20.0)),
+                    ..default()
+                })
+                .with_children(|row| {
+                    // Next Level button (victory only, not on last level)
+                    if outcome.victory && current_level.0 < crate::data::MAX_LEVELS {
+                        row.spawn((
+                            Button,
+                            NextLevelButton,
+                            Node {
+                                width: Val::Px(200.0),
+                                height: Val::Px(50.0),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.2, 0.45, 0.2, 0.9)),
+                            BorderRadius::all(Val::Px(8.0)),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new("Next Level"),
+                                TextFont { font_size: 24.0, ..default() },
+                                TextColor(Color::WHITE),
+                            ));
+                        });
+                    }
+
+                    // Play Again
+                    row.spawn((
+                        Button,
+                        RestartButton,
+                        Node {
+                            width: Val::Px(200.0),
+                            height: Val::Px(50.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.3, 0.3, 0.4, 0.9)),
+                        BorderRadius::all(Val::Px(8.0)),
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new("Play Again"),
+                            TextFont { font_size: 24.0, ..default() },
+                            TextColor(Color::WHITE),
+                        ));
+                    });
+
+                    // Level Select
+                    row.spawn((
+                        Button,
+                        LevelSelectButton,
+                        Node {
+                            width: Val::Px(200.0),
+                            height: Val::Px(50.0),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.3, 0.3, 0.4, 0.9)),
+                        BorderRadius::all(Val::Px(8.0)),
+                    ))
+                    .with_children(|btn| {
+                        btn.spawn((
+                            Text::new("Level Select"),
+                            TextFont { font_size: 24.0, ..default() },
+                            TextColor(Color::WHITE),
+                        ));
+                    });
                 });
         });
 }
 
 fn handle_restart_button(
     mut commands: Commands,
-    interactions: Query<&Interaction, (Changed<Interaction>, With<RestartButton>)>,
+    restart_q: Query<&Interaction, (Changed<Interaction>, With<RestartButton>)>,
+    next_level_q: Query<&Interaction, (Changed<Interaction>, With<NextLevelButton>, Without<RestartButton>, Without<LevelSelectButton>)>,
+    level_select_q: Query<&Interaction, (Changed<Interaction>, With<LevelSelectButton>, Without<RestartButton>, Without<NextLevelButton>)>,
     mut next_state: ResMut<NextState<AppState>>,
     mut game: ResMut<GameData>,
     mut wave: ResMut<WaveState>,
@@ -1579,25 +1713,53 @@ fn handle_restart_button(
     mut speed: ResMut<GameSpeed>,
     mut needs_setup: ResMut<crate::resources::NeedsFreshSetup>,
     mut hero_cmd: ResMut<crate::resources::HeroMoveCommand>,
+    mut current_level: ResMut<crate::resources::CurrentLevel>,
+    mut auto_wave: ResMut<crate::resources::AutoWave>,
     build_menus: Query<Entity, With<BuildMenuRoot>>,
     tower_panels: Query<Entity, With<TowerPanelRoot>>,
     prompts: Query<Entity, With<RallyPointPrompt>>,
 ) {
-    for interaction in &interactions {
-        if *interaction == Interaction::Pressed {
-            *game = GameData::default();
-            *wave = WaveState::default();
-            *selection = Selection::None;
-            speed.0 = 1.0;
-            hero_cmd.0 = None;
+    let mut action: Option<&str> = None;
+
+    for interaction in &restart_q {
+        if *interaction == Interaction::Pressed { action = Some("restart"); }
+    }
+    for interaction in &next_level_q {
+        if *interaction == Interaction::Pressed { action = Some("next"); }
+    }
+    for interaction in &level_select_q {
+        if *interaction == Interaction::Pressed { action = Some("select"); }
+    }
+
+    let Some(act) = action else { return };
+
+    // Reset common state
+    *game = GameData::default();
+    *wave = WaveState::default();
+    *selection = Selection::None;
+    speed.0 = 1.0;
+    hero_cmd.0 = None;
+    auto_wave.enabled = false;
+    auto_wave.countdown = 0.0;
+
+    // Clean up any lingering UI panels
+    for e in &build_menus { commands.entity(e).despawn_recursive(); }
+    for e in &tower_panels { commands.entity(e).despawn_recursive(); }
+    for e in &prompts { commands.entity(e).despawn_recursive(); }
+
+    match act {
+        "next" => {
+            current_level.0 = (current_level.0 + 1).min(crate::data::MAX_LEVELS);
             needs_setup.0 = true;
-
-            // Clean up any lingering UI panels
-            for e in &build_menus { commands.entity(e).despawn_recursive(); }
-            for e in &tower_panels { commands.entity(e).despawn_recursive(); }
-            for e in &prompts { commands.entity(e).despawn_recursive(); }
-
-            // Go through WaitingForWindow for clean state transition
+            next_state.set(AppState::WaitingForWindow);
+        }
+        "select" => {
+            needs_setup.0 = true;
+            next_state.set(AppState::LevelSelect);
+        }
+        _ => {
+            // Play Again — same level
+            needs_setup.0 = true;
             next_state.set(AppState::WaitingForWindow);
         }
     }

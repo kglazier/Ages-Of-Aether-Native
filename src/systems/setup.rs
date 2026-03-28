@@ -45,8 +45,12 @@ pub fn setup_level(
     current_level: Res<crate::resources::CurrentLevel>,
     mut level_path_res: ResMut<crate::resources::LevelPath>,
     mut game_data: ResMut<crate::resources::GameData>,
+    mut auto_wave: ResMut<crate::resources::AutoWave>,
     save_data: Option<Res<crate::save::SaveData>>,
 ) {
+    // Reset auto-wave at the start of each new level
+    auto_wave.enabled = false;
+    auto_wave.countdown = 0.0;
     let level = current_level.0;
     let theme = level_theme(level);
     let config = level_start_config(level);

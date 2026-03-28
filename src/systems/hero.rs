@@ -73,9 +73,11 @@ pub fn spawn_hero(
 
     commands.spawn((
         SceneRoot(scene),
+        // y_offset raises the model visually; blocking/attack use XZ-only distance.
         Transform::from_translation(spawn_pos + Vec3::new(0.0, stats.model_y_offset, 0.0))
             .with_scale(Vec3::splat(stats.model_scale)),
         Hero,
+        HeroModelYOffset(stats.model_y_offset),
         Health {
             current: stats.hp,
             max: stats.hp,
@@ -188,8 +190,10 @@ pub fn hero_auto_attack(
         // Find nearest enemy: prefer blocked enemies in a wide range, fall back to any in attack range
         let mut best: Option<(Entity, f32)> = None;
         let mut best_unblocked: Option<(Entity, f32)> = None;
+        let hero_xz = Vec3::new(hero_tf.translation.x, 0.0, hero_tf.translation.z);
         for (entity, enemy_tf, _, _, blocked) in &enemies {
-            let dist = hero_tf.translation.distance(enemy_tf.translation);
+            let enemy_xz = Vec3::new(enemy_tf.translation.x, 0.0, enemy_tf.translation.z);
+            let dist = hero_xz.distance(enemy_xz);
             if blocked.is_some() && dist <= 4.0 {
                 if best.is_none() || dist < best.unwrap().1 {
                     best = Some((entity, dist));
@@ -265,6 +269,28 @@ pub fn hero_respawn_tick(
     }
 }
 
+/// Applies the visual Y offset to the hero scene child once it loads.
+/// The hero entity stays at ground level; only the rendered model is raised.
+pub fn apply_hero_model_offset(
+    mut commands: Commands,
+    hero_q: Query<(Entity, &Children, &HeroModelYOffset), With<Hero>>,
+    mut transforms: Query<&mut Transform>,
+) {
+    for (entity, children, offset) in &hero_q {
+        if offset.0 == 0.0 {
+            commands.entity(entity).remove::<HeroModelYOffset>();
+            continue;
+        }
+        // Apply offset to first child (the scene root)
+        if let Some(&child) = children.iter().next() {
+            if let Ok(mut tf) = transforms.get_mut(child) {
+                tf.translation.y += offset.0;
+                commands.entity(entity).remove::<HeroModelYOffset>();
+            }
+        }
+    }
+}
+
 /// Spawns 3D health bar and selection ring for the hero once it appears.
 pub fn spawn_hero_visuals(
     mut commands: Commands,
@@ -322,7 +348,7 @@ pub fn spawn_hero_visuals(
 
 /// Updates hero 3D health bar position and the selection ring.
 pub fn update_hero_visuals(
-    hero_q: Query<(&Transform, &Health, Option<&HeroRespawnTimer>), With<Hero>>,
+    hero_q: Query<(&Transform, &GlobalTransform, &Health, Option<&HeroRespawnTimer>), With<Hero>>,
     mut bar_q: Query<
         (&mut Transform, &MeshMaterial3d<StandardMaterial>, &HeroHealthBar3d),
         (Without<Hero>, Without<HeroHealthBarBg3d>, Without<HeroSelectionRing>),
@@ -343,7 +369,7 @@ pub fn update_hero_visuals(
     selection: Res<Selection>,
     time: Res<Time>,
 ) {
-    let Ok((hero_tf, health, respawn)) = hero_q.get_single() else {
+    let Ok((hero_tf, hero_global, health, respawn)) = hero_q.get_single() else {
         return;
     };
     let Ok(cam_tf) = camera_q.get_single() else {
@@ -351,7 +377,9 @@ pub fn update_hero_visuals(
     };
 
     let is_dead = respawn.is_some();
-    let bar_pos = hero_tf.translation + Vec3::Y * 2.0;
+    // Use global transform to find model's actual world XZ (handles rotated armatures)
+    let world_pos = hero_global.translation();
+    let bar_pos = Vec3::new(world_pos.x, 2.5, world_pos.z);
 
     // Update health bar fill
     for (mut transform, mat_handle, _) in &mut bar_q {
@@ -394,9 +422,9 @@ pub fn update_hero_visuals(
             transform.translation = Vec3::new(0.0, -100.0, 0.0);
         } else {
             transform.translation = Vec3::new(
-                hero_tf.translation.x,
+                world_pos.x,
                 0.05,
-                hero_tf.translation.z,
+                world_pos.z,
             );
             // Flat on ground
             transform.rotation = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
@@ -467,16 +495,19 @@ pub fn block_enemies(
     // Collect blocker positions + ranges
     let mut blockers: Vec<(Vec3, f32)> = Vec::new();
     if let Ok(hero_tf) = hero_q.get_single() {
-        // Only block if hero is near the path
+        // Only block if hero is near the path (use XZ distance to ignore model Y offset)
         let path = &level_path.0;
+        let hero_xz = Vec3::new(hero_tf.translation.x, 0.0, hero_tf.translation.z);
         let hero_near_path = (0..path.len() - 1).any(|i| {
-            let ab = path[i + 1] - path[i];
-            let ap = hero_tf.translation - path[i];
+            let a = Vec3::new(path[i].x, 0.0, path[i].z);
+            let b = Vec3::new(path[i + 1].x, 0.0, path[i + 1].z);
+            let ab = b - a;
+            let ap = hero_xz - a;
             let t = (ap.dot(ab) / ab.dot(ab)).clamp(0.0, 1.0);
-            hero_tf.translation.distance(path[i] + ab * t) <= 2.5
+            hero_xz.distance(a + ab * t) <= 2.5
         });
         if hero_near_path {
-            blockers.push((hero_tf.translation, hero_range));
+            blockers.push((hero_xz, hero_range));
         }
     }
     for golem_tf in &golems {
@@ -486,9 +517,11 @@ pub fn block_enemies(
     for (entity, mut transform, flying, was_blocked, block_offset) in &mut enemies {
         if flying.is_some() { continue; }
 
-        // Check if in range of any blocker
+        // Check if in range of any blocker (XZ distance to ignore Y offsets)
+        let enemy_xz = Vec3::new(transform.translation.x, 0.0, transform.translation.z);
         let in_range = blockers.iter().any(|(pos, range)| {
-            pos.distance(transform.translation) <= *range
+            let blocker_xz = Vec3::new(pos.x, 0.0, pos.z);
+            blocker_xz.distance(enemy_xz) <= *range
         });
 
         if in_range && was_blocked.is_none() {
@@ -527,8 +560,9 @@ pub fn enemies_attack_hero(
     let dr_factor = dr_buff.map(|b| b.factor).unwrap_or(1.0);
     for (enemy_tf, blocked) in &enemies {
         if blocked.is_none() { continue; }
-        let dist = hero_tf.translation.distance(enemy_tf.translation);
-        if dist < attack_range {
+        let dist_xz = Vec3::new(hero_tf.translation.x, 0.0, hero_tf.translation.z)
+            .distance(Vec3::new(enemy_tf.translation.x, 0.0, enemy_tf.translation.z));
+        if dist_xz < attack_range {
             hero_health.current -= dps_per_enemy * dr_factor * time.delta_secs();
         }
     }
@@ -1007,9 +1041,11 @@ pub fn cancel_hero_root_motion(
         // Armature rotation correction — applied AFTER animation writes bone rotations.
         // Fixes models exported with wrong up-axis (e.g. Pharaoh is Z-up instead of Y-up).
         // SET rather than multiply, since animations don't target the Armature node itself.
+        // Also zero the armature translation so the rotation doesn't displace the model.
         if let (Some(armature), Some(fix_rot)) = (anim.armature_entity, anim.armature_rotation_fix) {
             if let Ok(mut tf) = transforms.get_mut(armature) {
                 tf.rotation = fix_rot;
+                tf.translation = Vec3::ZERO;
             }
         }
     }

@@ -45,6 +45,7 @@ pub fn main() {
         .init_resource::<resources::WaveState>()
         .init_resource::<resources::Selection>()
         .init_resource::<resources::WaveButtonPressed>()
+        .init_resource::<resources::AutoWave>()
         .init_resource::<resources::GameSpeed>()
         .init_resource::<resources::NeedsFreshSetup>()
         .init_resource::<resources::HeroMoveCommand>()

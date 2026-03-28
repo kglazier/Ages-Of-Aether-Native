@@ -234,9 +234,13 @@ pub fn update_debug_overlay(
     enemies: Query<Entity, With<Enemy>>,
     towers: Query<Entity, With<Tower>>,
     golems: Query<Entity, With<Golem>>,
+    build_spots: Query<(&Transform, &BuildSpot)>,
+    hero_q: Query<&Transform, With<Hero>>,
     diagnostics: Res<DiagnosticsStore>,
     mut text_q: Query<&mut Text, With<DebugStatsText>>,
     current_level: Res<CurrentLevel>,
+    camera_q: Query<(&Camera, &GlobalTransform), With<Camera3d>>,
+    windows: Query<&Window>,
 ) {
     if !debug_state.show_overlay {
         return;
@@ -257,15 +261,57 @@ pub fn update_debug_overlay(
         WavePhase::Active => "Active",
     };
 
+    // Raycast cursor to ground plane (Y=0) for world coordinates
+    let mut cursor_world = String::new();
+    if let Ok((camera, cam_tf)) = camera_q.get_single() {
+        if let Ok(window) = windows.get_single() {
+            if let Some(cursor_pos) = window.cursor_position() {
+                if let Ok(ray) = camera.viewport_to_world(cam_tf, cursor_pos) {
+                    // Intersect with Y=0 plane
+                    if ray.direction.y.abs() > 0.001 {
+                        let t = -ray.origin.y / ray.direction.y;
+                        if t > 0.0 {
+                            let hit = ray.origin + ray.direction * t;
+                            cursor_world = format!("\nCursor: ({:.1}, {:.1})", hit.x, hit.z);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Hero position
+    let hero_info = if let Ok(hero_tf) = hero_q.get_single() {
+        format!("\nHero: ({:.1}, {:.1})", hero_tf.translation.x, hero_tf.translation.z)
+    } else {
+        String::new()
+    };
+
+    // Build spot positions
+    let mut spots_info = String::new();
+    let mut spots: Vec<_> = build_spots.iter().collect();
+    spots.sort_by_key(|(_, s)| s.id);
+    for (tf, spot) in &spots {
+        spots_info.push_str(&format!(
+            "\n  #{}: ({:.1}, {:.1}){}",
+            spot.id, tf.translation.x, tf.translation.z,
+            if spot.occupied { " [T]" } else { "" }
+        ));
+    }
+    if !spots_info.is_empty() {
+        spots_info = format!("\nSpots:{}", spots_info);
+    }
+
     let info = format!(
         "FPS: {:.0} | Level: {}\n\
          Gold: {} | Lives: {}\n\
          Wave: {}/{} [{}]\n\
-         E: {} | T: {} | G: {}",
+         E: {} | T: {} | G: {}{}{}{}",
         fps, current_level.0,
         game.gold, game.lives,
         game.wave_number, game.max_waves, phase,
         enemy_count, tower_count, golem_count,
+        cursor_world, hero_info, spots_info,
     );
 
     for mut text in &mut text_q {

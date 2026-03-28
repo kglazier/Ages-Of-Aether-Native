@@ -355,23 +355,26 @@ pub fn setup_model_debug(
         ModelDebugEntity,
     ));
 
-    let maiden_idle = "models/heroes/anims/maiden-idle.glb";
+    let para = "models/enemies/parasaurolophus.glb";
 
-    // (label, model, scale, anim, rotation_x, strip_curves)
-    let pi2 = std::f32::consts::FRAC_PI_2;
+    // (label, model, scale, anim_clip_path, rotation_x, strip_curves)
+    // anim_clip_path is the FULL asset path including #AnimationN
     let variants: Vec<(&str, &str, f32, &str, f32, bool)> = vec![
-        // Row 1: Pharaoh rotation variants
-        ("pharaoh raw", "models/heroes/pharaoh.glb", 0.015, maiden_idle, 0.0, false),
-        ("pharaoh -90X", "models/heroes/pharaoh.glb", 0.015, maiden_idle, -pi2, false),
-        ("pharaoh +90X", "models/heroes/pharaoh.glb", 0.015, maiden_idle, pi2, false),
-        // Row 2: Scarlet Magus
-        ("magus raw", "models/heroes/scarlet-magus.glb", 0.015, maiden_idle, 0.0, false),
-        ("magus -90X", "models/heroes/scarlet-magus.glb", 0.015, maiden_idle, -pi2, false),
-        ("magus +90X", "models/heroes/scarlet-magus.glb", 0.015, maiden_idle, pi2, false),
+        // Row 1: Parasaur embedded animations
+        ("Para #0 Attack", para, 0.5, "models/enemies/parasaurolophus.glb#Animation0", 0.0, false),
+        ("Para #1 Death",  para, 0.5, "models/enemies/parasaurolophus.glb#Animation1", 0.0, false),
+        ("Para #2 Idle",   para, 0.5, "models/enemies/parasaurolophus.glb#Animation2", 0.0, false),
+        ("Para #3 Jump",   para, 0.5, "models/enemies/parasaurolophus.glb#Animation3", 0.0, false),
+        // Row 2: More parasaur embedded
+        ("Para #4 Run",    para, 0.5, "models/enemies/parasaurolophus.glb#Animation4", 0.0, false),
+        ("Para #5 Walk",   para, 0.5, "models/enemies/parasaurolophus.glb#Animation5", 0.0, false),
+        // Compy (same model, purple tint in-game)
+        ("Compy #0 Atk",   para, 0.4, "models/enemies/parasaurolophus.glb#Animation0", 0.0, false),
+        ("Compy #4 Run",   para, 0.4, "models/enemies/parasaurolophus.glb#Animation4", 0.0, false),
     ];
 
-    let cols = 3;
-    let spacing = 10.0;
+    let cols = 4;
+    let spacing = 12.0;
 
     for (idx, (label, model, scale, anim, rot_x, strip_curves)) in variants.iter().enumerate() {
         let col = idx % cols;
@@ -392,7 +395,7 @@ pub fn setup_model_debug(
             ModelDebugEntity,
         ));
         if !anim.is_empty() {
-            let clip_path = format!("{}#Animation0", anim);
+            let clip_path = anim.to_string();
             let clip_handle: Handle<AnimationClip> = asset_server.load(&clip_path);
             entity_cmds.insert(ShowcaseNeedsAnim(clip_path));
             if *strip_curves {
@@ -442,7 +445,7 @@ pub fn setup_model_debug(
         TextColor(Color::WHITE),
     ));
 
-    info!("Model debug: spawned {} outsider variants", variants.len());
+    info!("Model debug: spawned {} stegosaurus anim variants", variants.len());
 }
 
 /// Handle back button press on the debug screen.

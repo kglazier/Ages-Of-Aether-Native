@@ -449,7 +449,7 @@ pub fn healer_aura_tick(
         .collect();
 
     for (enemy_transform, mut health) in &mut enemies {
-        if health.current >= health.max {
+        if health.current <= 0.0 || health.current >= health.max {
             continue;
         }
         for (healer_pos, radius, hps) in &healer_info {
@@ -574,6 +574,10 @@ pub fn update_range_indicator(
 /// After an enemy's scene loads, recolor its materials by cloning each material,
 /// removing the texture, and setting a tinted solid color. Each mesh part gets
 /// the tint blended with its original base color so body sections stay distinct.
+/// Applies species-colored tinting using the "keepColors + lightness spread" algorithm.
+/// 1. Collects per-mesh-part lightness from the original material
+/// 2. Remaps lightness to [0.32, 0.76] range for visual contrast
+/// 3. Applies species hue with per-part hue variation
 pub fn apply_enemy_tints(
     mut commands: Commands,
     tinted: Query<(Entity, &Children, &EnemyNeedsTint)>,
@@ -582,44 +586,128 @@ pub fn apply_enemy_tints(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for (entity, children, tint) in &tinted {
-        let mut found = false;
         let tint_srgba = tint.0.to_srgba();
+
+        // Convert species color to HSL for hue/saturation
+        let species_hue = rgb_to_hsl(tint_srgba.red, tint_srgba.green, tint_srgba.blue);
+
+        // Pass 1: collect mesh entities and their original lightness values
+        struct MeshPart {
+            entity: Entity,
+            handle: Handle<StandardMaterial>,
+            lightness: f32,
+        }
+        let mut parts: Vec<MeshPart> = Vec::new();
         let mut stack: Vec<Entity> = children.iter().copied().collect();
         while let Some(child) = stack.pop() {
             if let Ok((mesh_entity, mat_handle)) = mesh_q.get(child) {
                 if let Some(original) = materials.get(&mat_handle.0) {
-                    let mut new_mat = original.clone();
-                    // Blend tint with original base_color for per-part variation
-                    let orig = new_mat.base_color.to_srgba();
-                    let orig_lum = orig.red * 0.3 + orig.green * 0.6 + orig.blue * 0.1;
-                    let lum_factor = 0.4 + orig_lum * 0.8; // spread lightness across parts
-                    new_mat.base_color = Color::srgb(
-                        tint_srgba.red * lum_factor,
-                        tint_srgba.green * lum_factor,
-                        tint_srgba.blue * lum_factor,
-                    );
-                    // Remove texture so solid tint color is clearly visible
-                    new_mat.base_color_texture = None;
-                    // Emissive glow so tint shows in shadow
-                    new_mat.emissive = LinearRgba::new(
-                        tint_srgba.red * 0.2,
-                        tint_srgba.green * 0.2,
-                        tint_srgba.blue * 0.2,
-                        1.0,
-                    );
-                    let new_handle = materials.add(new_mat);
-                    commands.entity(mesh_entity).insert(MeshMaterial3d(new_handle));
-                    found = true;
+                    let orig = original.base_color.to_srgba();
+                    let (_, _, l) = rgb_to_hsl(orig.red, orig.green, orig.blue);
+                    parts.push(MeshPart {
+                        entity: mesh_entity,
+                        handle: mat_handle.0.clone(),
+                        lightness: l,
+                    });
                 }
             }
             if let Ok(grandchildren) = children_q.get(child) {
                 stack.extend(grandchildren.iter());
             }
         }
-        if found {
-            commands.entity(entity).remove::<EnemyNeedsTint>();
+
+        if parts.is_empty() {
+            continue; // Scene meshes not loaded yet
         }
+
+        // Pass 2: normalize lightness and apply species hue
+        let min_l = parts.iter().map(|p| p.lightness).fold(f32::INFINITY, f32::min);
+        let max_l = parts.iter().map(|p| p.lightness).fold(f32::NEG_INFINITY, f32::max);
+        let range = (max_l - min_l).max(0.001);
+
+        for (i, part) in parts.iter().enumerate() {
+            if let Some(original) = materials.get(&part.handle) {
+                let mut new_mat = original.clone();
+                // Normalize lightness to [0, 1]
+                let t = if parts.len() <= 1 {
+                    0.5
+                } else if range < 0.01 {
+                    // All parts same lightness — fallback to index-based spread
+                    i as f32 / (parts.len() as f32 - 1.0).max(1.0)
+                } else {
+                    ((part.lightness - min_l) / range).clamp(0.0, 1.0)
+                };
+
+                // Remap to target lightness range [0.32, 0.76]
+                let target_l = 0.32 + t * 0.44;
+                // Per-part hue variation
+                let hue_shift = (t - 0.5) * 0.06;
+                let h = species_hue.0 + hue_shift;
+                let s = species_hue.1 * 0.85;
+
+                let (r, g, b) = hsl_to_rgb(h, s, target_l);
+                new_mat.base_color = Color::srgb(r, g, b);
+                new_mat.base_color_texture = None;
+                new_mat.perceptual_roughness = 1.0;
+                new_mat.metallic = 0.0;
+                // Subtle emissive so color reads in shadow
+                new_mat.emissive = LinearRgba::new(r * 0.15, g * 0.15, b * 0.15, 1.0);
+
+                let new_handle = materials.add(new_mat);
+                commands.entity(part.entity).insert(MeshMaterial3d(new_handle));
+            }
+        }
+
+        commands.entity(entity).remove::<EnemyNeedsTint>();
     }
+}
+
+/// Convert RGB [0,1] to HSL [0,1].
+fn rgb_to_hsl(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+
+    if (max - min).abs() < 0.001 {
+        return (0.0, 0.0, l);
+    }
+
+    let d = max - min;
+    let s = if l > 0.5 { d / (2.0 - max - min) } else { d / (max + min) };
+    let h = if (max - r).abs() < 0.001 {
+        let mut h = (g - b) / d;
+        if g < b { h += 6.0; }
+        h / 6.0
+    } else if (max - g).abs() < 0.001 {
+        ((b - r) / d + 2.0) / 6.0
+    } else {
+        ((r - g) / d + 4.0) / 6.0
+    };
+
+    (h, s, l)
+}
+
+/// Convert HSL [0,1] to RGB [0,1].
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (f32, f32, f32) {
+    if s.abs() < 0.001 {
+        return (l, l, l);
+    }
+
+    let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+    let p = 2.0 * l - q;
+    let r = hue_to_rgb(p, q, h + 1.0 / 3.0);
+    let g = hue_to_rgb(p, q, h);
+    let b = hue_to_rgb(p, q, h - 1.0 / 3.0);
+    (r, g, b)
+}
+
+fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
+    if t < 0.0 { t += 1.0; }
+    if t > 1.0 { t -= 1.0; }
+    if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
+    if t < 0.5 { return q; }
+    if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+    p
 }
 
 /// Hides ground-plane / stand meshes that some Sketchfab models include.
@@ -677,11 +765,11 @@ const HP_BAR_Y_OFFSET: f32 = 1.8;
 /// Spawns HP bar meshes (background + fill) for newly added enemies.
 pub fn spawn_health_bars(
     mut commands: Commands,
-    new_enemies: Query<Entity, Added<Enemy>>,
+    new_enemies: Query<(Entity, Option<&HealerAura>), Added<Enemy>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    for entity in &new_enemies {
+    for (entity, healer) in &new_enemies {
         // Background (dark, slightly larger)
         commands.spawn((
             Mesh3d(meshes.add(Rectangle::new(HP_BAR_WIDTH + 0.06, HP_BAR_HEIGHT + 0.04))),
@@ -708,6 +796,23 @@ pub fn spawn_health_bars(
             Transform::default(),
             HealthBar(entity),
         ));
+
+        // Thin green ring under healer enemies
+        if healer.is_some() {
+            commands.spawn((
+                Mesh3d(meshes.add(Annulus::new(0.55, 0.65))),
+                MeshMaterial3d(materials.add(StandardMaterial {
+                    base_color: Color::srgba(0.2, 0.9, 0.3, 0.5),
+                    emissive: LinearRgba::new(0.2, 0.8, 0.3, 1.0),
+                    alpha_mode: AlphaMode::Blend,
+                    unlit: true,
+                    double_sided: true,
+                    ..default()
+                })),
+                Transform::default(),
+                HealerRing(entity),
+            ));
+        }
     }
 }
 
@@ -768,6 +873,22 @@ pub fn update_health_bars(
         let bar_pos = enemy_tf.translation + Vec3::Y * HP_BAR_Y_OFFSET;
         transform.rotation = cam_tf.rotation;
         transform.translation = bar_pos;
+    }
+}
+
+/// Updates healer ring position (flat on ground under the enemy).
+pub fn update_healer_rings(
+    mut commands: Commands,
+    enemies: Query<&Transform, With<Enemy>>,
+    mut rings: Query<(Entity, &HealerRing, &mut Transform), Without<Enemy>>,
+) {
+    for (ring_entity, ring, mut transform) in &mut rings {
+        let Ok(enemy_tf) = enemies.get(ring.0) else {
+            commands.entity(ring_entity).despawn();
+            continue;
+        };
+        transform.translation = Vec3::new(enemy_tf.translation.x, 0.05, enemy_tf.translation.z);
+        transform.rotation = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
     }
 }
 

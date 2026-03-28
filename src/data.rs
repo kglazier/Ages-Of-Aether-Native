@@ -169,49 +169,49 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             hp: 35.0, speed: 3.2, armor: 0.0, magic_resist: 0.0,
             gold_reward: 16, model_path: "models/enemies/velociraptor.glb",
             model_scale: 0.15, is_flying: false, tint: Some([0.24, 0.53, 0.16]),
-            anim_indices: [0; 4],
+            anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Stegosaurus => EnemyStats {
             hp: 60.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 16, model_path: "models/enemies/stegosaurus.glb",
             model_scale: 0.18, is_flying: false, tint: Some([0.24, 0.53, 0.42]),
-            anim_indices: [0; 4],
+            anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Parasaur => EnemyStats {
             hp: 55.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 15, model_path: "models/enemies/parasaurolophus.glb",
-            model_scale: 0.15, is_flying: false, tint: Some([0.13, 0.20, 0.53]),
-            anim_indices: [0; 4],
+            model_scale: 0.15, is_flying: false, tint: Some([0.33, 0.67, 0.27]),
+            anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Triceratops => EnemyStats {
             hp: 180.0, speed: 1.5, armor: 35.0, magic_resist: 0.0,
             gold_reward: 24, model_path: "models/enemies/triceratops.glb",
             model_scale: 0.2, is_flying: false, tint: Some([0.77, 0.47, 0.19]),
-            anim_indices: [0; 4],
+            anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Pterodactyl => EnemyStats {
             hp: 40.0, speed: 2.5, armor: 0.0, magic_resist: 0.3,
             gold_reward: 19, model_path: "models/enemies/dragon.glb",
-            model_scale: 0.18, is_flying: true, tint: Some([0.40, 0.47, 0.53]),
-            anim_indices: [0; 4],
+            model_scale: 0.35, is_flying: true, tint: Some([0.80, 0.27, 0.20]),
+            anim_indices: [3, 3, 0, 2], // Flying, Flying, Attack, Death (dragon.glb)
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::CompyHealer => EnemyStats {
             hp: 30.0, speed: 2.0, armor: 0.0, magic_resist: 0.2,
             gold_reward: 19, model_path: "models/enemies/parasaurolophus.glb",
             model_scale: 0.12, is_flying: false, tint: Some([0.67, 0.33, 0.80]),
-            anim_indices: [0; 4],
+            anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
             anim_files: None, rotation_y: 0.0, is_healer: true,
         },
         EnemyType::TRex => EnemyStats {
             hp: 550.0, speed: 1.1, armor: 15.0, magic_resist: 0.1,
             gold_reward: 90, model_path: "models/enemies/trex.glb",
             model_scale: 0.35, is_flying: false, tint: Some([0.53, 0.27, 0.13]),
-            anim_indices: [0; 4],
+            anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
 
@@ -223,7 +223,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             hp: 55.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 16, model_path: "models/enemies/caveman.glb",
             model_scale: 0.7, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
         },
         // Animal — procedural animation
@@ -231,14 +231,14 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             hp: 40.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 17, model_path: "models/enemies/sabertooth.glb",
             model_scale: 0.5, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            anim_indices: [0, 0, 0, 0], // single embedded Run anim for all states
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Mammoth => EnemyStats {
             hp: 200.0, speed: 1.5, armor: 40.0, magic_resist: 0.0,
             gold_reward: 26, model_path: "models/enemies/mammoth.glb",
-            model_scale: 0.8, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 1.2, is_flying: false, tint: None,
+            anim_indices: [2, 1, 0, 0], // Walk, Idle, HeadShake, HeadShake (no death anim)
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         // Humanoid — Mixamo external anims
@@ -246,30 +246,30 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             hp: 35.0, speed: 1.8, armor: 0.0, magic_resist: 0.2,
             gold_reward: 20, model_path: "models/enemies/shaman.glb",
             model_scale: 0.7, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true,
         },
         // Animal — procedural animation
         EnemyType::GiantEagle => EnemyStats {
             hp: 45.0, speed: 2.5, armor: 0.0, magic_resist: 0.3,
             gold_reward: 20, model_path: "models/enemies/eagle.glb",
-            model_scale: 0.3, is_flying: true, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 0.025, is_flying: true, tint: None,
+            anim_indices: [0, 0, 0, 0], // single embedded fly anim for all states
             anim_files: None,
             rotation_y: -std::f32::consts::FRAC_PI_2, is_healer: false,
         },
         EnemyType::Dodo => EnemyStats {
             hp: 35.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 16, model_path: "models/enemies/dodo.glb",
-            model_scale: 0.2, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 0.13, is_flying: false, tint: None,
+            anim_indices: [255; 4],
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::WoollyRhino => EnemyStats {
             hp: 650.0, speed: 1.0, armor: 20.0, magic_resist: 0.1,
             gold_reward: 100, model_path: "models/enemies/woolly-rhino.glb",
-            model_scale: 0.7, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 1.2, is_flying: false, tint: None,
+            anim_indices: [2, 2, 0, 1], // Walk, Walk, Bite, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
 
@@ -280,30 +280,30 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         EnemyType::Legionary => EnemyStats {
             hp: 65.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 17, model_path: "models/enemies/legionary.glb",
-            model_scale: 0.3, is_flying: false, tint: None,
-            anim_indices: [0; 4],
-            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
+            model_scale: 0.025, is_flying: false, tint: None,
+            anim_indices: [0, 0, 0, 0], // only has embedded walk anim (#0) for all states
+            anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         // Animal — procedural animation
         EnemyType::Lion => EnemyStats {
             hp: 45.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 18, model_path: "models/enemies/lion.glb",
-            model_scale: 0.35, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 1.5, is_flying: false, tint: Some([0.82, 0.62, 0.32]),
+            anim_indices: [2, 3, 0, 1], // Run, Walk, Bite, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::WarElephant => EnemyStats {
             hp: 250.0, speed: 1.5, armor: 50.0, magic_resist: 0.0,
             gold_reward: 28, model_path: "models/enemies/war-elephant.glb",
-            model_scale: 0.5, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 2.5, is_flying: false, tint: None,
+            anim_indices: [2, 2, 0, 1], // Walk, Walk, Bite, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::EagleScout => EnemyStats {
             hp: 40.0, speed: 2.5, armor: 0.0, magic_resist: 0.3,
             gold_reward: 20, model_path: "models/enemies/eagle.glb",
-            model_scale: 0.25, is_flying: true, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 0.03, is_flying: true, tint: Some([0.45, 0.30, 0.18]),
+            anim_indices: [0, 0, 0, 0], // single embedded fly anim for all states
             anim_files: None,
             rotation_y: -std::f32::consts::FRAC_PI_2, is_healer: false,
         },
@@ -311,16 +311,16 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         EnemyType::Medicus => EnemyStats {
             hp: 40.0, speed: 1.8, armor: 0.0, magic_resist: 0.2,
             gold_reward: 22, model_path: "models/enemies/medicus.glb",
-            model_scale: 0.3, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 0.7, is_flying: false, tint: None,
+            anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true,
         },
         EnemyType::Minotaur => EnemyStats {
             hp: 700.0, speed: 1.0, armor: 15.0, magic_resist: 0.1,
             gold_reward: 110, model_path: "models/enemies/minotaur.glb",
             model_scale: 0.5, is_flying: false, tint: None,
-            anim_indices: [0; 4],
-            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
+            anim_indices: [1, 0, 1, 0], // Walk/Attack, Idle, Walk/Attack, Idle
+            anim_files: None, rotation_y: 0.0, is_healer: false,
         },
 
         // =====================================================================
@@ -330,22 +330,22 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         EnemyType::Footman => EnemyStats {
             hp: 70.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 18, model_path: "models/enemies/footman.glb",
-            model_scale: 0.25, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            model_scale: 0.7, is_flying: false, tint: None,
+            anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Cavalry => EnemyStats {
             hp: 50.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 19, model_path: "models/enemies/cavalry-knight.glb",
             model_scale: 0.3, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            anim_indices: [255; 4],
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Knight => EnemyStats {
             hp: 220.0, speed: 1.5, armor: 45.0, magic_resist: 0.0,
             gold_reward: 26, model_path: "models/enemies/knight.glb",
             model_scale: 0.3, is_flying: false, tint: None,
-            anim_indices: [0; 4],
+            anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
         },
         // Animal — procedural animation
@@ -353,7 +353,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             hp: 50.0, speed: 2.5, armor: 0.0, magic_resist: 0.3,
             gold_reward: 22, model_path: "models/enemies/dragon.glb",
             model_scale: 0.3, is_flying: true, tint: None,
-            anim_indices: [0; 4],
+            anim_indices: [255; 4],
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         // Humanoid — Mixamo external anims
@@ -361,14 +361,14 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             hp: 35.0, speed: 1.8, armor: 0.0, magic_resist: 0.2,
             gold_reward: 22, model_path: "models/enemies/medicus.glb",
             model_scale: 0.25, is_flying: false, tint: Some([0.8, 0.8, 1.0]),
-            anim_indices: [0; 4],
+            anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true,
         },
         EnemyType::Dragon => EnemyStats {
             hp: 800.0, speed: 1.2, armor: 10.0, magic_resist: 0.1,
             gold_reward: 120, model_path: "models/enemies/dragon.glb",
             model_scale: 0.7, is_flying: false, tint: Some([0.8, 0.2, 0.1]),
-            anim_indices: [0; 4],
+            anim_indices: [3, 3, 0, 2], // Flying, Flying, Attack, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
     }

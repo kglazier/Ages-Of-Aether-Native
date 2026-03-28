@@ -56,6 +56,8 @@ pub struct PathFollower {
     pub base_speed: f32,
     /// Lateral offset perpendicular to path direction for visual spacing.
     pub lateral_offset: f32,
+    /// Vertical offset to keep model above ground (varies by enemy type).
+    pub y_offset: f32,
 }
 
 #[derive(Component)]
@@ -240,6 +242,10 @@ pub struct HealerAura {
     pub heal_per_second: f32,
 }
 
+/// Visual ring under healer enemies. Tracks which enemy it belongs to.
+#[derive(Component)]
+pub struct HealerRing(pub Entity);
+
 // ---------------------------------------------------------------------------
 // Upgrade indicators
 // ---------------------------------------------------------------------------
@@ -290,6 +296,11 @@ pub struct BurnZone {
 /// Marker: this entity is the player's hero.
 #[derive(Component)]
 pub struct Hero;
+
+/// Visual Y offset for hero model (applied to scene child, not root entity).
+/// Keeps root entity at ground level for accurate blocking/distance checks.
+#[derive(Component)]
+pub struct HeroModelYOffset(pub f32);
 
 /// Where the hero is moving toward (None = standing still).
 #[derive(Component)]
@@ -395,9 +406,15 @@ pub struct ProceduralWalkAnim {
 }
 
 /// Stores discovered quadruped leg bone entities for programmatic walk animation.
-/// Each entry is (bone_entity, phase_offset) where phase_offset is 0 or PI.
 #[derive(Component)]
-pub struct QuadLegBones(pub Vec<(Entity, f32)>);
+pub struct QuadLegBones {
+    /// Leg bones: (entity, phase_offset, bind_euler_z, bind_euler_y).
+    /// Uses ZYX Euler order so X (outermost) = parent-axis swing, matching Three.js.
+    pub legs: Vec<(Entity, f32, f32, f32)>,
+    /// Foot IK-target bones: (entity, phase_offset, bind_quaternion, bind_translation).
+    /// Translated vertically to follow leg swing arc.
+    pub feet: Vec<(Entity, f32, Quat, Vec3)>,
+}
 
 /// Marker: leg bones haven't been discovered yet for this procedural-walk enemy.
 #[derive(Component)]

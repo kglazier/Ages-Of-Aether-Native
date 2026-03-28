@@ -10,7 +10,7 @@ mod golem;
 mod hero;
 mod input;
 mod path;
-mod setup;
+pub mod setup;
 pub mod showcase;
 pub mod tower_spec;
 mod wave;
@@ -116,6 +116,7 @@ impl Plugin for GamePlugin {
             (
                 camera::camera_control.in_set(GameSet::Input),
                 input::handle_world_click.in_set(GameSet::Input),
+                wave::auto_wave_tick.in_set(GameSet::Input),
                 wave::wave_spawner.in_set(GameSet::Spawning),
                 wave::heal_hero_on_wave_start.in_set(GameSet::Spawning),
                 golem::spawn_golems.in_set(GameSet::Spawning),
@@ -140,7 +141,7 @@ impl Plugin for GamePlugin {
             Update,
             (
                 enemy_anim::discover_leg_bones.in_set(GameSet::Spawning),
-                enemy_anim::strip_enemy_walk_root_motion.in_set(GameSet::Spawning),
+                enemy_anim::strip_enemy_clip_root_motion.in_set(GameSet::Spawning),
             ),
         );
         // Hero systems (separate call due to Bevy tuple size limit)
@@ -154,6 +155,7 @@ impl Plugin for GamePlugin {
                 hero::hero_death_check.in_set(GameSet::Cleanup),
                 hero::hero_respawn_tick.in_set(GameSet::Cleanup),
                 hero::spawn_hero_visuals.in_set(GameSet::Spawning),
+                hero::apply_hero_model_offset.in_set(GameSet::Spawning),
                 hero::setup_hero_animations.in_set(GameSet::Spawning),
                 hero::strip_hero_root_motion_clips.in_set(GameSet::Spawning),
                 hero::strip_hero_rotation_only_clips.in_set(GameSet::Spawning),
@@ -192,7 +194,12 @@ impl Plugin for GamePlugin {
                 game_over::check_game_over.in_set(GameSet::Cleanup),
             ),
         );
-        // Ground mesh stripping & tower specializations
+        // Healer rings + ground mesh stripping & tower specializations
+        app.add_systems(
+            Update,
+            combat::update_healer_rings.in_set(GameSet::Visual)
+                .run_if(in_state(AppState::Playing)),
+        );
         app.add_systems(
             Update,
             (
@@ -230,10 +237,7 @@ impl Plugin for GamePlugin {
         // but BEFORE TransformPropagate computes GlobalTransform for rendering.
         app.add_systems(
             PostUpdate,
-            (
-                hero::cancel_hero_root_motion,
-                enemy_anim::cancel_enemy_root_motion,
-            )
+            hero::cancel_hero_root_motion
                 .after(bevy::animation::animate_targets)
                 .before(bevy::transform::TransformSystem::TransformPropagate)
                 .run_if(in_state(AppState::Playing)),
@@ -307,6 +311,7 @@ fn update_upgrade_indicators(
                         tower_transform.translation + Vec3::new(offset_x, 3.0, 0.0),
                     ),
                     crate::components::UpgradeIndicator { tower: tower_entity },
+                    crate::components::GameWorldEntity,
                 ));
             }
         }
