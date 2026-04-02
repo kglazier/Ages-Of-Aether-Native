@@ -96,9 +96,19 @@ impl Plugin for UiPlugin {
         app.add_systems(OnExit(AppState::UpgradeShop), cleanup_menu_screen);
 
         // Logbook
-        app.add_systems(OnEnter(AppState::Logbook), setup_logbook);
-        app.add_systems(Update, handle_logbook.run_if(in_state(AppState::Logbook)));
-        app.add_systems(OnExit(AppState::Logbook), cleanup_menu_screen);
+        app.init_resource::<crate::systems::logbook_preview::LogbookPreviews>();
+        app.add_systems(OnEnter(AppState::Logbook), (
+            setup_logbook,
+            crate::systems::logbook_preview::setup_logbook_previews,
+        ));
+        app.add_systems(Update, (
+            handle_logbook,
+            crate::systems::logbook_preview::apply_preview_tints,
+        ).run_if(in_state(AppState::Logbook)));
+        app.add_systems(OnExit(AppState::Logbook), (
+            cleanup_menu_screen,
+            crate::systems::logbook_preview::cleanup_logbook_previews,
+        ));
 
         // Credits
         app.add_systems(OnEnter(AppState::Credits), setup_credits);
@@ -389,10 +399,11 @@ fn update_hud(
             WavePhase::Idle => "[Ready]",
             WavePhase::Spawning => "[Spawning...]",
             WavePhase::PulsePause => "[Next pulse...]",
-            WavePhase::Active if game.wave_number < game.max_waves => "[Call Early]",
+            WavePhase::Active if game.wave_number + 1 < game.max_waves => "[Call Early]",
             WavePhase::Active => "[Active]",
         };
-        t.0 = format!("Wave: {}/{}  {}", game.wave_number, game.max_waves, status);
+        let display_wave = (game.wave_number + 1).min(game.max_waves);
+        t.0 = format!("Wave: {}/{}  {}", display_wave, game.max_waves, status);
     }
 }
 
@@ -415,7 +426,7 @@ fn update_wave_button(
             text.0 = "Send Wave".into();
             bg.0 = Color::srgba(0.2, 0.5, 0.2, 0.9);
         }
-        WavePhase::Active if game.wave_number < game.max_waves => {
+        WavePhase::Active if game.wave_number + 1 < game.max_waves => {
             text.0 = "Call Early".into();
             bg.0 = Color::srgba(0.5, 0.35, 0.1, 0.9);
         }
@@ -439,7 +450,7 @@ fn handle_wave_button(
         }
         // Only trigger in states where Space would work
         let can_start = matches!(wave.phase, WavePhase::Idle) && game.wave_number < game.max_waves;
-        let can_call_early = matches!(wave.phase, WavePhase::Active) && game.wave_number < game.max_waves;
+        let can_call_early = matches!(wave.phase, WavePhase::Active) && game.wave_number + 1 < game.max_waves;
         if can_start || can_call_early {
             wave_btn.0 = true;
         }
@@ -2436,9 +2447,9 @@ fn spawn_hero_preview(commands: &mut Commands, asset_server: &AssetServer, hero_
     // Preview-specific overrides — game stats are tuned for the gameplay camera,
     // not the close-up hero select camera at (0, 2, 5).
     let (preview_scale, preview_y, preview_rot_y) = match hero_type {
-        HeroType::IceHulk => (0.9, 0.3, 0.0),
+        HeroType::IceHulk => (0.9, 1.2, 0.0),
         HeroType::NorthernOutsider => (0.012, 0.0, 0.0),
-        HeroType::Pharaoh => (0.01, 0.2, 0.0),
+        HeroType::Pharaoh => (0.01, 1.0, 0.0),
         HeroType::ScarletMagus => (1.0, 0.0, 0.0),
         _ => (stats.model_scale, stats.model_y_offset, 0.0),
     };
@@ -3000,10 +3011,18 @@ fn build_upgrade_shop_screen(commands: &mut Commands, save: &crate::save::SaveDa
 fn setup_logbook(
     mut commands: Commands,
     existing_cameras: Query<Entity, With<MenuCamera>>,
+    previews: Res<crate::systems::logbook_preview::LogbookPreviews>,
 ) {
     if existing_cameras.is_empty() {
         commands.spawn((Camera2d, MenuCamera));
     }
+
+    // Set ambient light for preview rendering
+    commands.insert_resource(AmbientLight {
+        color: Color::WHITE,
+        brightness: 500.0,
+        ..default()
+    });
 
     commands
         .spawn((
@@ -3042,7 +3061,7 @@ fn setup_logbook(
             });
 
             // Default: show enemies page
-            spawn_logbook_enemies(root);
+            spawn_logbook_enemies(root, &previews);
 
             // Back button
             spawn_menu_button(
@@ -3055,115 +3074,171 @@ fn setup_logbook(
         });
 }
 
-fn spawn_logbook_enemies(parent: &mut ChildBuilder) {
+fn spawn_logbook_enemies(parent: &mut ChildBuilder, previews: &crate::systems::logbook_preview::LogbookPreviews) {
     parent.spawn((
         LogbookPageRoot,
         Node {
-            flex_direction: FlexDirection::Row,
-            flex_wrap: FlexWrap::Wrap,
-            column_gap: Val::Px(10.0),
-            row_gap: Val::Px(10.0),
-            justify_content: JustifyContent::Center,
-            max_width: Val::Px(900.0),
+            flex_direction: FlexDirection::Column,
+            width: Val::Percent(100.0),
+            max_width: Val::Px(920.0),
+            flex_grow: 1.0,
+            overflow: Overflow::scroll_y(),
             ..default()
         },
     ))
-    .with_children(|grid| {
-        for enemy_type in &crate::data::ALL_ENEMY_TYPES {
-            let info = crate::data::enemy_info(*enemy_type);
-            let stats = crate::data::enemy_stats(*enemy_type);
+    .with_children(|scroll| {
+        scroll.spawn((
+            Node {
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(10.0),
+                row_gap: Val::Px(10.0),
+                justify_content: JustifyContent::Center,
+                padding: UiRect::vertical(Val::Px(8.0)),
+                ..default()
+            },
+        ))
+        .with_children(|grid| {
+            for enemy_type in &crate::data::ALL_ENEMY_TYPES {
+                let info = crate::data::enemy_info(*enemy_type);
+                let stats = crate::data::enemy_stats(*enemy_type);
 
-            grid.spawn((
-                Node {
-                    width: Val::Px(200.0),
-                    min_height: Val::Px(90.0),
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
-                    row_gap: Val::Px(3.0),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.12, 0.08, 0.18, 0.9)),
-                BorderRadius::all(Val::Px(8.0)),
-            ))
-            .with_children(|card| {
-                card.spawn((
-                    Text::new(info.name),
-                    TextFont { font_size: 17.0, ..default() },
-                    TextColor(Color::WHITE),
-                ));
-                card.spawn((
-                    Text::new(info.traits),
-                    TextFont { font_size: 12.0, ..default() },
-                    TextColor(Color::srgb(1.0, 0.7, 0.3)),
-                ));
-                card.spawn((
-                    Text::new(info.description),
-                    TextFont { font_size: 11.0, ..default() },
-                    TextColor(Color::srgb(0.6, 0.6, 0.6)),
-                ));
-                card.spawn((
-                    Text::new(format!("HP: {:.0}  SPD: {:.1}  ARM: {:.0}", stats.hp, stats.speed, stats.armor)),
-                    TextFont { font_size: 10.0, ..default() },
-                    TextColor(Color::srgb(0.5, 0.7, 0.5)),
-                ));
-            });
-        }
+                grid.spawn((
+                    Node {
+                        width: Val::Px(200.0),
+                        min_height: Val::Px(90.0),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::all(Val::Px(8.0)),
+                        row_gap: Val::Px(3.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.12, 0.08, 0.18, 0.9)),
+                    BorderRadius::all(Val::Px(8.0)),
+                ))
+                .with_children(|card| {
+                    // Model preview image
+                    if let Some(img) = previews.enemy_images.get(info.name) {
+                        card.spawn((
+                            ImageNode::new(img.clone()),
+                            Node {
+                                width: Val::Px(80.0),
+                                height: Val::Px(80.0),
+                                margin: UiRect::bottom(Val::Px(4.0)),
+                                ..default()
+                            },
+                            BorderRadius::all(Val::Px(6.0)),
+                        ));
+                    }
+                    card.spawn((
+                        Text::new(info.name),
+                        TextFont { font_size: 17.0, ..default() },
+                        TextColor(Color::WHITE),
+                    ));
+                    card.spawn((
+                        Text::new(info.traits),
+                        TextFont { font_size: 12.0, ..default() },
+                        TextColor(Color::srgb(1.0, 0.7, 0.3)),
+                    ));
+                    card.spawn((
+                        Text::new(info.description),
+                        TextFont { font_size: 11.0, ..default() },
+                        TextColor(Color::srgb(0.6, 0.6, 0.6)),
+                        Node { align_self: AlignSelf::FlexStart, ..default() },
+                    ));
+                    card.spawn((
+                        Text::new(format!("HP: {:.0}  SPD: {:.1}  ARM: {:.0}", stats.hp, stats.speed, stats.armor)),
+                        TextFont { font_size: 10.0, ..default() },
+                        TextColor(Color::srgb(0.5, 0.7, 0.5)),
+                        Node { align_self: AlignSelf::FlexStart, ..default() },
+                    ));
+                });
+            }
+        });
     });
 }
 
-fn spawn_logbook_towers(parent: &mut ChildBuilder) {
+fn spawn_logbook_towers(parent: &mut ChildBuilder, previews: &crate::systems::logbook_preview::LogbookPreviews) {
     parent.spawn((
         LogbookPageRoot,
         Node {
-            flex_direction: FlexDirection::Row,
-            flex_wrap: FlexWrap::Wrap,
-            column_gap: Val::Px(10.0),
-            row_gap: Val::Px(10.0),
-            justify_content: JustifyContent::Center,
-            max_width: Val::Px(900.0),
+            flex_direction: FlexDirection::Column,
+            width: Val::Percent(100.0),
+            max_width: Val::Px(920.0),
+            flex_grow: 1.0,
+            overflow: Overflow::scroll_y(),
             ..default()
         },
     ))
-    .with_children(|grid| {
-        let elements = [Element::Lightning, Element::Earth, Element::Ice, Element::Fire];
-        for element in &elements {
-            let base = tower_stats(*element, 0);
-            let color = element_color(*element);
+    .with_children(|scroll| {
+        scroll.spawn((
+            Node {
+                flex_direction: FlexDirection::Row,
+                flex_wrap: FlexWrap::Wrap,
+                column_gap: Val::Px(10.0),
+                row_gap: Val::Px(10.0),
+                justify_content: JustifyContent::Center,
+                padding: UiRect::vertical(Val::Px(8.0)),
+                ..default()
+            },
+        ))
+        .with_children(|grid| {
+            let elements = [Element::Lightning, Element::Earth, Element::Ice, Element::Fire];
+            for element in &elements {
+                let base = tower_stats(*element, 0);
+                let color = element_color(*element);
 
-            grid.spawn((
-                Node {
-                    width: Val::Px(200.0),
-                    min_height: Val::Px(100.0),
-                    flex_direction: FlexDirection::Column,
-                    padding: UiRect::all(Val::Px(10.0)),
-                    row_gap: Val::Px(3.0),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.12, 0.08, 0.18, 0.9)),
-                BorderRadius::all(Val::Px(8.0)),
-            ))
-            .with_children(|card| {
-                card.spawn((
-                    Text::new(base.name),
-                    TextFont { font_size: 18.0, ..default() },
-                    TextColor(color),
-                ));
-                card.spawn((
-                    Text::new(format!("Cost: {}g  DMG: {:.0}  RNG: {:.1}", base.cost, base.damage, base.range)),
-                    TextFont { font_size: 12.0, ..default() },
-                    TextColor(Color::srgb(0.7, 0.7, 0.7)),
-                ));
-                // Specializations
-                let specs = element_specializations(*element);
-                for (_, spec_def) in &specs {
+                grid.spawn((
+                    Node {
+                        width: Val::Px(200.0),
+                        min_height: Val::Px(100.0),
+                        flex_direction: FlexDirection::Column,
+                        align_items: AlignItems::Center,
+                        padding: UiRect::all(Val::Px(8.0)),
+                        row_gap: Val::Px(3.0),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.12, 0.08, 0.18, 0.9)),
+                    BorderRadius::all(Val::Px(8.0)),
+                ))
+                .with_children(|card| {
+                    // Model preview image
+                    if let Some(img) = previews.tower_images.get(base.name) {
+                        card.spawn((
+                            ImageNode::new(img.clone()),
+                            Node {
+                                width: Val::Px(80.0),
+                                height: Val::Px(80.0),
+                                margin: UiRect::bottom(Val::Px(4.0)),
+                                ..default()
+                            },
+                            BorderRadius::all(Val::Px(6.0)),
+                        ));
+                    }
                     card.spawn((
-                        Text::new(format!("{} — {}", spec_def.name, spec_def.description)),
-                        TextFont { font_size: 10.0, ..default() },
-                        TextColor(Color::srgb(0.5, 0.5, 0.7)),
+                        Text::new(base.name),
+                        TextFont { font_size: 18.0, ..default() },
+                        TextColor(color),
                     ));
-                }
-            });
-        }
+                    card.spawn((
+                        Text::new(format!("Cost: {}g  DMG: {:.0}  RNG: {:.1}", base.cost, base.damage, base.range)),
+                        TextFont { font_size: 12.0, ..default() },
+                        TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                        Node { align_self: AlignSelf::FlexStart, ..default() },
+                    ));
+                    // Specializations
+                    let specs = element_specializations(*element);
+                    for (_, spec_def) in &specs {
+                        card.spawn((
+                            Text::new(format!("{} — {}", spec_def.name, spec_def.description)),
+                            TextFont { font_size: 10.0, ..default() },
+                            TextColor(Color::srgb(0.5, 0.5, 0.7)),
+                            Node { align_self: AlignSelf::FlexStart, ..default() },
+                        ));
+                    }
+                });
+            }
+        });
     });
 }
 
@@ -3173,6 +3248,7 @@ fn handle_logbook(
     mut next_state: ResMut<NextState<AppState>>,
     pages: Query<Entity, With<LogbookPageRoot>>,
     roots: Query<Entity, With<MenuScreenRoot>>,
+    previews: Res<crate::systems::logbook_preview::LogbookPreviews>,
 ) {
     for (interaction, btn) in &interactions {
         if *interaction != Interaction::Pressed { continue; }
@@ -3187,7 +3263,7 @@ fn handle_logbook(
                 }
                 if let Ok(root_entity) = roots.get_single() {
                     commands.entity(root_entity).with_children(|root| {
-                        spawn_logbook_enemies(root);
+                        spawn_logbook_enemies(root, &previews);
                     });
                 }
             }
@@ -3197,7 +3273,7 @@ fn handle_logbook(
                 }
                 if let Ok(root_entity) = roots.get_single() {
                     commands.entity(root_entity).with_children(|root| {
-                        spawn_logbook_towers(root);
+                        spawn_logbook_towers(root, &previews);
                     });
                 }
             }

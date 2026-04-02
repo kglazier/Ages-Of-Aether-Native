@@ -9,6 +9,7 @@ pub mod hero_ability;
 mod golem;
 mod hero;
 mod input;
+pub mod logbook_preview;
 mod path;
 pub mod setup;
 pub mod showcase;
@@ -58,6 +59,8 @@ impl Plugin for GamePlugin {
                 showcase::showcase_camera,
                 showcase::strip_debug_rotation_only_clips,
                 showcase::debug_back_button,
+                showcase::debug_mover_tick,
+                showcase::cavalry_debug_tick,
             ).run_if(in_state(AppState::ModelDebug)),
         );
         app.add_systems(OnExit(AppState::ModelDebug), showcase::cleanup_model_debug);
@@ -142,6 +145,8 @@ impl Plugin for GamePlugin {
             (
                 enemy_anim::discover_leg_bones.in_set(GameSet::Spawning),
                 enemy_anim::strip_enemy_clip_root_motion.in_set(GameSet::Spawning),
+                enemy_anim::animate_cavalry_knight.in_set(GameSet::Movement),
+                wave::apply_enemy_model_rotation.in_set(GameSet::Spawning),
             ),
         );
         // Hero systems (separate call due to Bevy tuple size limit)

@@ -205,16 +205,17 @@ pub fn move_projectiles(
                     TowerSpecialization::InfernoCannon => {
                         // Spawn a burning ground zone at impact
                         commands.spawn((
-                            Mesh3d(meshes.add(Cylinder::new(3.0, 0.05))),
+                            Mesh3d(meshes.add(Cylinder::new(3.0, 0.02))),
                             MeshMaterial3d(materials.add(StandardMaterial {
-                                base_color: Color::srgba(0.6, 0.15, 0.0, 0.15),
-                                emissive: LinearRgba::new(0.15, 0.04, 0.0, 1.0),
+                                base_color: Color::srgba(0.55, 0.13, 0.0, 0.12),
+                                emissive: LinearRgba::new(0.12, 0.03, 0.0, 1.0),
                                 alpha_mode: AlphaMode::Blend,
                                 unlit: true,
                                 ..default()
                             })),
-                            Transform::from_translation(Vec3::new(target_pos.x, 0.1, target_pos.z)),
+                            Transform::from_translation(Vec3::new(target_pos.x, 0.05, target_pos.z)),
                             BurnZone { radius: 3.0, dps: 5.0, remaining: 4.0 },
+                            GameWorldEntity,
                         ));
                     }
                     _ => {}

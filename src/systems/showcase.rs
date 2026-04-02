@@ -29,6 +29,19 @@ pub struct RotationOnlyAnim;
 #[derive(Component)]
 pub struct BoneBindPoses(pub HashMap<Entity, (Vec3, Vec3)>);
 
+/// Cavalry debug: different attack animation styles to compare.
+#[derive(Component)]
+pub enum CavalryDebugStyle {
+    /// Knight Z-rotation (current approach)
+    KnightLean,
+    /// Knight X-rotation (forward/back thrust)
+    KnightThrust,
+    /// Horse rocks forward/back, knight stays
+    HorseRock,
+    /// Both: horse rocks + knight thrusts
+    Combined,
+}
+
 /// Marker: this model's animation clips need curve stripping (keep only rotation).
 /// Stores the clip handle for stripping.
 #[derive(Component)]
@@ -41,6 +54,13 @@ pub struct CurveStripDone;
 /// Marker for the debug screen back button.
 #[derive(Component)]
 pub struct DebugBackButton;
+
+/// Oscillates a debug model back and forth along +X so you can see which way it faces.
+#[derive(Component)]
+pub struct DebugMover {
+    pub origin: Vec3,
+    pub speed: f32,
+}
 
 struct ModelEntry {
     path: &'static str,
@@ -355,22 +375,34 @@ pub fn setup_model_debug(
         ModelDebugEntity,
     ));
 
-    let para = "models/enemies/parasaurolophus.glb";
+    let pharaoh = "models/heroes/pharaoh.glb";
+    let maiden_idle = "models/heroes/anims/maiden-idle.glb";
+    let eagle = "models/enemies/eagle.glb";
+    let eagle_anim = "models/enemies/eagle.glb#Animation0";
+    let pi2 = std::f32::consts::FRAC_PI_2;
+    let pi = std::f32::consts::PI;
 
     // (label, model, scale, anim_clip_path, rotation_x, strip_curves)
     // anim_clip_path is the FULL asset path including #AnimationN
     let variants: Vec<(&str, &str, f32, &str, f32, bool)> = vec![
-        // Row 1: Parasaur embedded animations
-        ("Para #0 Attack", para, 0.5, "models/enemies/parasaurolophus.glb#Animation0", 0.0, false),
-        ("Para #1 Death",  para, 0.5, "models/enemies/parasaurolophus.glb#Animation1", 0.0, false),
-        ("Para #2 Idle",   para, 0.5, "models/enemies/parasaurolophus.glb#Animation2", 0.0, false),
-        ("Para #3 Jump",   para, 0.5, "models/enemies/parasaurolophus.glb#Animation3", 0.0, false),
-        // Row 2: More parasaur embedded
-        ("Para #4 Run",    para, 0.5, "models/enemies/parasaurolophus.glb#Animation4", 0.0, false),
-        ("Para #5 Walk",   para, 0.5, "models/enemies/parasaurolophus.glb#Animation5", 0.0, false),
-        // Compy (same model, purple tint in-game)
-        ("Compy #0 Atk",   para, 0.4, "models/enemies/parasaurolophus.glb#Animation0", 0.0, false),
-        ("Compy #4 Run",   para, 0.4, "models/enemies/parasaurolophus.glb#Animation4", 0.0, false),
+        // Row 1: Pharaoh with different rotations
+        ("Voltra raw",       pharaoh, 0.015, maiden_idle, 0.0, false),
+        ("Voltra +90X",      pharaoh, 0.015, maiden_idle, pi2, false),
+        ("Voltra -90X",      pharaoh, 0.015, maiden_idle, -pi2, false),
+        ("Voltra no anim",   pharaoh, 0.015, "", pi2, false),
+        // Row 2: Eagle Y-rotation variants (all oscillate along +X to show facing)
+        ("Eagle rotY=0",     eagle, 0.04, eagle_anim, 0.0, false),
+        ("Eagle rotY=-90",   eagle, 0.04, eagle_anim, 0.0, false),
+        ("Eagle rotY=+90",   eagle, 0.04, eagle_anim, 0.0, false),
+        ("Eagle rotY=180",   eagle, 0.04, eagle_anim, 0.0, false),
+    ];
+
+    // Y-rotation overrides for eagle variants (indices 4-7)
+    let eagle_y_rotations: [(usize, f32); 4] = [
+        (4, 0.0),
+        (5, -pi2),
+        (6, pi2),
+        (7, pi),
     ];
 
     let cols = 4;
@@ -388,12 +420,27 @@ pub fn setup_model_debug(
         if *rot_x != 0.0 {
             transform.rotate_x(*rot_x);
         }
+        // Apply Y-rotation overrides for eagle variants
+        for &(eagle_idx, rot_y) in &eagle_y_rotations {
+            if idx == eagle_idx && rot_y != 0.0 {
+                transform.rotate_y(rot_y);
+            }
+        }
+
+        let is_eagle = (4..=7).contains(&idx);
         let mut entity_cmds = commands.spawn((
             SceneRoot(scene),
             transform,
             ShowcaseModel,
             ModelDebugEntity,
         ));
+        // Eagles oscillate back and forth so you can see facing direction
+        if is_eagle {
+            entity_cmds.insert(DebugMover {
+                origin: Vec3::new(x, 2.0, z),
+                speed: 3.0,
+            });
+        }
         if !anim.is_empty() {
             let clip_path = anim.to_string();
             let clip_handle: Handle<AnimationClip> = asset_server.load(&clip_path);
@@ -425,6 +472,66 @@ pub fn setup_model_debug(
         ));
     }
 
+    // Row 3: Cavalry attack animation variants
+    let horse_model = "models/enemies/cavalry-horse.glb";
+    let knight_model = "models/enemies/cavalry-knight.glb";
+    let horse_anim = "models/enemies/cavalry-horse.glb#Animation0"; // Walk
+    let cavalry_styles = [
+        ("Cav: Knight lean Z", CavalryDebugStyle::KnightLean),
+        ("Cav: Knight thrust X", CavalryDebugStyle::KnightThrust),
+        ("Cav: Horse rock", CavalryDebugStyle::HorseRock),
+        ("Cav: Combined", CavalryDebugStyle::Combined),
+    ];
+    for (ci, (label, style)) in cavalry_styles.into_iter().enumerate() {
+        let idx = 8 + ci; // continue after row 2
+        let col = idx % cols;
+        let row = idx / cols;
+        let x = (col as f32 - cols as f32 / 2.0 + 0.5) * spacing;
+        let z = row as f32 * -spacing;
+
+        let horse_scene = asset_server.load(format!("{}#Scene0", horse_model));
+        let transform = Transform::from_translation(Vec3::new(x, 0.0, z))
+            .with_scale(Vec3::splat(0.5));
+
+        let mut entity_cmds = commands.spawn((
+            SceneRoot(horse_scene),
+            transform,
+            ShowcaseModel,
+            ModelDebugEntity,
+            style,
+            ShowcaseNeedsAnim(horse_anim.to_string()),
+        ));
+
+        // Mount the knight
+        let knight_scene = asset_server.load(format!("{}#Scene0", knight_model));
+        entity_cmds.with_child((
+            SceneRoot(knight_scene),
+            Transform::from_translation(Vec3::new(0.0, 1.0, 0.0))
+                .with_scale(Vec3::splat(0.013)),
+            crate::components::CavalryKnight,
+        ));
+
+        // Pedestal
+        commands.spawn((
+            Mesh3d(meshes.add(Cuboid::new(spacing * 0.8, 0.05, spacing * 0.8))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgb(0.12, 0.12, 0.15),
+                ..default()
+            })),
+            Transform::from_translation(Vec3::new(x, 0.01, z)),
+            ModelDebugEntity,
+        ));
+        // Label
+        commands.spawn((
+            Text2d::new(label),
+            TextFont { font_size: 16.0, ..default() },
+            TextColor(Color::WHITE),
+            Transform::from_translation(Vec3::new(x, 3.5, z - spacing * 0.35))
+                .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_4)),
+            ModelDebugEntity,
+        ));
+    }
+
     // Back button (2D UI overlay)
     commands.spawn((
         Node {
@@ -445,7 +552,7 @@ pub fn setup_model_debug(
         TextColor(Color::WHITE),
     ));
 
-    info!("Model debug: spawned {} stegosaurus anim variants", variants.len());
+    info!("Model debug: spawned {} Voltra variants", variants.len());
 }
 
 /// Handle back button press on the debug screen.
@@ -456,6 +563,87 @@ pub fn debug_back_button(
     for &inter in &interaction {
         if inter == Interaction::Pressed {
             next_state.set(crate::states::AppState::MainMenu);
+        }
+    }
+}
+
+/// Oscillates DebugMover entities back and forth along +X from their origin.
+pub fn debug_mover_tick(
+    mut movers: Query<(&DebugMover, &mut Transform)>,
+    time: Res<Time>,
+) {
+    let t = time.elapsed_secs();
+    for (mover, mut transform) in &mut movers {
+        // Triangle wave: moves +X for 2s, resets to origin, repeat
+        let cycle = (t * 0.5) % 1.0; // 0..1 over 2 seconds
+        let offset_x = cycle * mover.speed * 2.0;
+        transform.translation = mover.origin + Vec3::new(offset_x, 0.0, 0.0);
+    }
+}
+
+/// Animates cavalry debug variants with different attack styles.
+pub fn cavalry_debug_tick(
+    cavalry_q: Query<(Entity, &CavalryDebugStyle, &Children)>,
+    mut transforms: Query<&mut Transform>,
+    knight_q: Query<Entity, With<crate::components::CavalryKnight>>,
+    children_q: Query<&Children>,
+    time: Res<Time>,
+) {
+    let t = time.elapsed_secs();
+    for (entity, style, children) in &cavalry_q {
+        // Find the knight child entity
+        let knight_entity = children.iter()
+            .find(|c| knight_q.get(**c).is_ok())
+            .copied();
+
+        // Find the first scene-root child (horse mesh root) — it's the child that ISN'T the knight
+        let horse_child = children.iter()
+            .find(|c| knight_q.get(**c).is_err())
+            .copied();
+
+        match style {
+            CavalryDebugStyle::KnightLean => {
+                // Current approach: knight Z-rotation lean
+                if let Some(ke) = knight_entity {
+                    if let Ok(mut tf) = transforms.get_mut(ke) {
+                        let swing = (t * 4.0).sin() * 0.2;
+                        tf.rotation = Quat::from_rotation_z(swing);
+                    }
+                }
+            }
+            CavalryDebugStyle::KnightThrust => {
+                // Knight thrusts forward/back (X rotation)
+                if let Some(ke) = knight_entity {
+                    if let Ok(mut tf) = transforms.get_mut(ke) {
+                        let thrust = (t * 5.0).sin() * 0.25;
+                        tf.rotation = Quat::from_rotation_x(thrust);
+                    }
+                }
+            }
+            CavalryDebugStyle::HorseRock => {
+                // Horse scene root rocks forward/back
+                if let Some(hc) = horse_child {
+                    if let Ok(mut tf) = transforms.get_mut(hc) {
+                        let rock = (t * 3.0).sin() * 0.08;
+                        tf.rotation = Quat::from_rotation_x(rock);
+                    }
+                }
+            }
+            CavalryDebugStyle::Combined => {
+                // Horse rocks + knight thrusts
+                if let Some(hc) = horse_child {
+                    if let Ok(mut tf) = transforms.get_mut(hc) {
+                        let rock = (t * 3.0).sin() * 0.06;
+                        tf.rotation = Quat::from_rotation_x(rock);
+                    }
+                }
+                if let Some(ke) = knight_entity {
+                    if let Ok(mut tf) = transforms.get_mut(ke) {
+                        let thrust = (t * 5.0).sin() * 0.2;
+                        tf.rotation = Quat::from_rotation_x(thrust);
+                    }
+                }
+            }
         }
     }
 }

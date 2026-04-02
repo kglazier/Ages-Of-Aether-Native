@@ -15,13 +15,15 @@ const PULSE_ENEMY_THRESHOLD: u32 = 2;
 /// Heal hero to full HP at the start of each wave.
 pub fn heal_hero_on_wave_start(
     mut hero_q: Query<&mut Health, (With<Hero>, Without<HeroRespawnTimer>)>,
-    _wave: Res<WaveState>,
-    mut last_wave: Local<u32>,
-    game: Res<GameData>,
+    wave: Res<WaveState>,
+    mut healed_this_wave: Local<bool>,
 ) {
-    // Detect wave number change (wave just started)
-    if game.wave_number != *last_wave && game.wave_number > 0 {
-        *last_wave = game.wave_number;
+    if matches!(wave.phase, WavePhase::Idle) {
+        *healed_this_wave = false;
+        return;
+    }
+    if !*healed_this_wave && matches!(wave.phase, WavePhase::Spawning) {
+        *healed_this_wave = true;
         for mut health in &mut hero_q {
             health.current = health.max;
         }
@@ -52,7 +54,6 @@ pub fn wave_spawner(
                 return;
             }
 
-            game.wave_number += 1;
             start_wave(&mut wave, &game, current_level.0);
         }
 
@@ -61,7 +62,7 @@ pub fn wave_spawner(
             wave.spawn_timer += dt;
             wave.wave_elapsed += dt;
 
-            let wave_num = game.wave_number as f32;
+            let wave_num = (game.wave_number + 1) as f32;
             let config = level_start_config(current_level.0);
             let hp_mult = 1.0 + config.wave_hp_scale * (wave_num - 1.0);
             let speed_mult = 1.0 + config.wave_speed_scale * (wave_num - 1.0);
@@ -132,14 +133,15 @@ pub fn wave_spawner(
         WavePhase::Active => {
             if wave.active_enemies == 0 {
                 wave.phase = WavePhase::Idle;
+                game.wave_number += 1;
             }
 
             // Call Early: tap button during active wave for bonus gold
             if btn_pressed
-                && game.wave_number < game.max_waves
+                && game.wave_number + 1 < game.max_waves
             {
                 let waves = level_waves(current_level.0);
-                let wave_idx = (game.wave_number as usize).min(waves.len() - 1);
+                let wave_idx = ((game.wave_number + 1) as usize).min(waves.len() - 1);
                 let bonus = waves[wave_idx].early_call_bonus;
                 game.gold += bonus;
 
@@ -155,7 +157,7 @@ pub fn wave_spawner(
 /// Initialize wave state for a new wave.
 fn start_wave(wave: &mut WaveState, game: &GameData, level: u32) {
     let waves = level_waves(level);
-    let wave_idx = (game.wave_number as usize - 1).min(waves.len() - 1);
+    let wave_idx = (game.wave_number as usize).min(waves.len() - 1);
     let wave_def = &waves[wave_idx];
 
     wave.groups = wave_def
@@ -195,9 +197,11 @@ fn spawn_enemy(
         match enemy_type {
             EnemyType::Stegosaurus => 0.6,
             EnemyType::Triceratops => 0.5,
+            EnemyType::Dodo => 0.5,
             EnemyType::Caveman => 1.0,
-            EnemyType::Shaman => 0.5,
+            EnemyType::Shaman => 0.0,
             EnemyType::Legionary => 2.0,
+            EnemyType::Cavalry => 0.0,
             EnemyType::Medicus => 0.0,
             _ => 0.0,
         }
@@ -260,6 +264,40 @@ fn spawn_enemy(
             radius: 4.0,
             heal_per_second: 5.0,
         });
+    }
+
+    // Cavalry: mount the knight model on the horse
+    if enemy_type == EnemyType::Cavalry {
+        let knight_scene = asset_server.load("models/enemies/cavalry-knight.glb#Scene0");
+        entity_commands.with_child((
+            SceneRoot(knight_scene),
+            Transform::from_translation(Vec3::new(0.0, 1.0, 0.0))
+                .with_scale(Vec3::splat(0.013)),
+            CavalryKnight,
+        ));
+    }
+
+    // Eagle models need facing correction on child (entity rotation is overridden by path following)
+    if matches!(enemy_type, EnemyType::GiantEagle | EnemyType::EagleScout) {
+        entity_commands.insert(EnemyModelRotation(
+            Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2)
+        ));
+    }
+}
+
+/// Applies model rotation correction to the scene root child for enemies that need it.
+pub fn apply_enemy_model_rotation(
+    mut commands: Commands,
+    enemies: Query<(Entity, &Children, &EnemyModelRotation)>,
+    mut transforms: Query<&mut Transform>,
+) {
+    for (entity, children, model_rot) in &enemies {
+        if let Some(&child) = children.iter().next() {
+            if let Ok(mut tf) = transforms.get_mut(child) {
+                tf.rotation = model_rot.0;
+                commands.entity(entity).remove::<EnemyModelRotation>();
+            }
+        }
     }
 }
 

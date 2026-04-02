@@ -67,9 +67,13 @@ pub fn debug_hotkeys(
         for mut health in &mut enemies {
             health.current = 0.0;
         }
+        // Mark current/next wave as completed
+        if game.wave_number < game.max_waves {
+            game.wave_number += 1;
+        }
         wave.phase = WavePhase::Idle;
         wave.active_enemies = 0;
-        info!("DEBUG: wave skipped");
+        info!("DEBUG: wave skipped (now wave {})", game.wave_number);
     }
     if keys.just_pressed(KeyCode::F1) {
         debug_state.show_overlay = !debug_state.show_overlay;
@@ -154,6 +158,7 @@ fn spawn_debug_button<M: Component>(parent: &mut ChildBuilder, label: &str, text
 
 /// Handles debug button interactions.
 pub fn handle_debug_buttons(
+    mut commands: Commands,
     toggle_q: Query<&Interaction, (Changed<Interaction>, With<DebugToggleButton>)>,
     gold_q: Query<&Interaction, (Changed<Interaction>, With<DebugGoldButton>)>,
     lives_q: Query<&Interaction, (Changed<Interaction>, With<DebugLivesButton>)>,
@@ -165,7 +170,7 @@ pub fn handle_debug_buttons(
     mut game: ResMut<GameData>,
     mut wave: ResMut<WaveState>,
     mut enemies: Query<&mut Health, (With<Enemy>, Without<Hero>)>,
-    mut hero_q: Query<&mut Health, (With<Hero>, Without<Enemy>)>,
+    mut hero_q: Query<(Entity, &mut Health), (With<Hero>, Without<Enemy>)>,
     mut current_level: ResMut<CurrentLevel>,
     mut needs_fresh: ResMut<NeedsFreshSetup>,
     mut next_state: ResMut<NextState<crate::states::AppState>>,
@@ -200,15 +205,22 @@ pub fn handle_debug_buttons(
             for mut health in &mut enemies {
                 health.current = 0.0;
             }
+            // Advance wave number even if wave hasn't started yet
+            if game.wave_number < game.max_waves {
+                game.wave_number += 1;
+            }
             wave.phase = WavePhase::Idle;
             wave.active_enemies = 0;
-            info!("DEBUG: wave skipped");
+            info!("DEBUG: wave skipped (now wave {})", game.wave_number);
         }
     }
     for interaction in &heal_q {
         if *interaction == Interaction::Pressed {
-            for mut health in &mut hero_q {
+            for (entity, mut health) in &mut hero_q {
                 health.current = health.max;
+                // Also revive if dead
+                commands.entity(entity).remove::<HeroRespawnTimer>();
+                commands.entity(entity).insert(Visibility::Visible);
             }
             info!("DEBUG: hero healed");
         }
@@ -309,7 +321,7 @@ pub fn update_debug_overlay(
          E: {} | T: {} | G: {}{}{}{}",
         fps, current_level.0,
         game.gold, game.lives,
-        game.wave_number, game.max_waves, phase,
+        (game.wave_number + 1).min(game.max_waves), game.max_waves, phase,
         enemy_count, tower_count, golem_count,
         cursor_world, hero_info, spots_info,
     );

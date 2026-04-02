@@ -222,7 +222,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         EnemyType::Caveman => EnemyStats {
             hp: 55.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 16, model_path: "models/enemies/caveman.glb",
-            model_scale: 0.7, is_flying: false, tint: None,
+            model_scale: 1.0, is_flying: false, tint: None,
             anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
         },
@@ -230,14 +230,14 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         EnemyType::Sabertooth => EnemyStats {
             hp: 40.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 17, model_path: "models/enemies/sabertooth.glb",
-            model_scale: 0.5, is_flying: false, tint: None,
+            model_scale: 1.2, is_flying: false, tint: None,
             anim_indices: [0, 0, 0, 0], // single embedded Run anim for all states
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Mammoth => EnemyStats {
             hp: 200.0, speed: 1.5, armor: 40.0, magic_resist: 0.0,
             gold_reward: 26, model_path: "models/enemies/mammoth.glb",
-            model_scale: 1.2, is_flying: false, tint: None,
+            model_scale: 1.6, is_flying: false, tint: None,
             anim_indices: [2, 1, 0, 0], // Walk, Idle, HeadShake, HeadShake (no death anim)
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
@@ -256,7 +256,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             model_scale: 0.025, is_flying: true, tint: None,
             anim_indices: [0, 0, 0, 0], // single embedded fly anim for all states
             anim_files: None,
-            rotation_y: -std::f32::consts::FRAC_PI_2, is_healer: false,
+            rotation_y: 0.0, is_healer: false, // facing handled by EnemyModelRotation on child
         },
         EnemyType::Dodo => EnemyStats {
             hp: 35.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
@@ -268,7 +268,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         EnemyType::WoollyRhino => EnemyStats {
             hp: 650.0, speed: 1.0, armor: 20.0, magic_resist: 0.1,
             gold_reward: 100, model_path: "models/enemies/woolly-rhino.glb",
-            model_scale: 1.2, is_flying: false, tint: None,
+            model_scale: 2.5, is_flying: false, tint: None,
             anim_indices: [2, 2, 0, 1], // Walk, Walk, Bite, Death
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
@@ -305,7 +305,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             model_scale: 0.03, is_flying: true, tint: Some([0.45, 0.30, 0.18]),
             anim_indices: [0, 0, 0, 0], // single embedded fly anim for all states
             anim_files: None,
-            rotation_y: -std::f32::consts::FRAC_PI_2, is_healer: false,
+            rotation_y: 0.0, is_healer: false, // facing handled by EnemyModelRotation on child
         },
         // Humanoid — Mixamo external anims
         EnemyType::Medicus => EnemyStats {
@@ -330,21 +330,21 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         EnemyType::Footman => EnemyStats {
             hp: 70.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 18, model_path: "models/enemies/footman.glb",
-            model_scale: 0.7, is_flying: false, tint: None,
+            model_scale: 1.0, is_flying: false, tint: None,
             anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Cavalry => EnemyStats {
             hp: 50.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
-            gold_reward: 19, model_path: "models/enemies/cavalry-knight.glb",
-            model_scale: 0.3, is_flying: false, tint: None,
-            anim_indices: [255; 4],
+            gold_reward: 19, model_path: "models/enemies/cavalry-horse.glb",
+            model_scale: 0.5, is_flying: false, tint: None,
+            anim_indices: [1, 3, 2, 3], // Trot, Rest, Gallop, Rest
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         EnemyType::Knight => EnemyStats {
             hp: 220.0, speed: 1.5, armor: 45.0, magic_resist: 0.0,
             gold_reward: 26, model_path: "models/enemies/knight.glb",
-            model_scale: 0.3, is_flying: false, tint: None,
+            model_scale: 0.8, is_flying: false, tint: None,
             anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
         },
@@ -353,7 +353,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             hp: 50.0, speed: 2.5, armor: 0.0, magic_resist: 0.3,
             gold_reward: 22, model_path: "models/enemies/dragon.glb",
             model_scale: 0.3, is_flying: true, tint: None,
-            anim_indices: [255; 4],
+            anim_indices: [3, 3, 0, 2], // Flying, Flying, Attack, Death (same as Pterodactyl)
             anim_files: None, rotation_y: 0.0, is_healer: false,
         },
         // Humanoid — Mixamo external anims
@@ -764,8 +764,8 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
             idle_anim: "models/heroes/anims/maiden-idle.glb",
             attack_anim: "models/heroes/anims/maiden-melee-kick.glb",
             run_anim: "models/enemies/anims/run.glb",
-            rotation_only_anims: false,
-            skip_root_motion_cancel: false,
+            rotation_only_anims: true,
+            skip_root_motion_cancel: true,
         },
         HeroType::IceHulk => HeroStats {
             name: "Cryo",
@@ -777,8 +777,8 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
             idle_anim: "models/heroes/anims/mutant-idle.glb",
             attack_anim: "models/heroes/anims/melee-combo.glb",
             run_anim: "models/enemies/anims/run.glb",
-            rotation_only_anims: false,
-            skip_root_motion_cancel: false,
+            rotation_only_anims: true,
+            skip_root_motion_cancel: true,
         },
         HeroType::NorthernOutsider => HeroStats {
             name: "Gorath",
@@ -803,8 +803,8 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
             idle_anim: "models/heroes/anims/maiden-idle.glb",
             attack_anim: "models/heroes/anims/maiden-melee-kick.glb",
             run_anim: "models/enemies/anims/run.glb",
-            rotation_only_anims: false,
-            skip_root_motion_cancel: false,
+            rotation_only_anims: true,
+            skip_root_motion_cancel: true,
         },
         HeroType::ScarletMagus => HeroStats {
             name: "Ignis",
@@ -816,8 +816,8 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
             idle_anim: "models/heroes/anims/maiden-idle.glb",
             attack_anim: "models/heroes/anims/maiden-melee-kick.glb",
             run_anim: "models/enemies/anims/run.glb",
-            rotation_only_anims: false,
-            skip_root_motion_cancel: false,
+            rotation_only_anims: true,
+            skip_root_motion_cancel: true,
         },
     }
 }
@@ -1480,10 +1480,10 @@ pub fn level9_build_spots() -> Vec<Vec3> {
         Vec3::new(-14.0, 0.0, 9.0),
         Vec3::new(-8.0, 0.0, 3.0),
         Vec3::new(-4.0, 0.0, 9.0),
-        Vec3::new(0.0, 0.0, -3.0),
+        Vec3::new(1.5, 0.0, 0.0),
         Vec3::new(5.0, 0.0, -9.0),
         Vec3::new(5.0, 0.0, -2.0),
-        Vec3::new(10.0, 0.0, -4.0),
+        Vec3::new(11.5, 0.0, -7.5),
         Vec3::new(10.0, 0.0, 3.0),
         Vec3::new(15.0, 0.0, -3.0),
     ]

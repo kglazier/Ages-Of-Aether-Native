@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use crate::components::*;
 use crate::resources::*;
+use crate::systems::hero::HeroAnimState;
 
 /// Handles mouse clicks and touch taps on the game world.
 /// - Tap hero → select hero
@@ -17,7 +18,8 @@ pub fn handle_world_click(
     camera_query: Query<(&Camera, &GlobalTransform)>,
     spots: Query<(Entity, &BuildSpot, &Transform)>,
     towers: Query<(Entity, &Transform), With<Tower>>,
-    hero_q: Query<&Transform, (With<Hero>, Without<Tower>, Without<BuildSpot>, Without<HeroRespawnTimer>)>,
+    hero_q: Query<(&Transform, Option<&HeroAnimState>), (With<Hero>, Without<Tower>, Without<BuildSpot>, Without<HeroRespawnTimer>)>,
+    bone_globals: Query<&GlobalTransform, (Without<Hero>, Without<Tower>, Without<BuildSpot>)>,
     mut selection: ResMut<Selection>,
     mut hero_move_cmd: ResMut<crate::resources::HeroMoveCommand>,
     // Don't process world clicks if a UI button is being hovered/pressed
@@ -68,9 +70,15 @@ pub fn handle_world_click(
     // Check hero first (tap to select hero) — skip if already selected so
     // that clicking near the hero commands a short move instead of re-selecting.
     if !matches!(*selection, Selection::Hero) {
-        for hero_tf in &hero_q {
-            let dist = world_pos.distance(hero_tf.translation);
-            if dist < 2.0 {
+        for (hero_tf, anim_state) in &hero_q {
+            // Use hips bone world position when available (accounts for model offset)
+            let hero_xz = anim_state
+                .and_then(|a| a.hips_entity)
+                .and_then(|hips| bone_globals.get(hips).ok())
+                .map(|gt| Vec3::new(gt.translation().x, 0.0, gt.translation().z))
+                .unwrap_or(Vec3::new(hero_tf.translation.x, 0.0, hero_tf.translation.z));
+            let click_xz = Vec3::new(world_pos.x, 0.0, world_pos.z);
+            if click_xz.distance(hero_xz) < 2.0 {
                 *selection = Selection::Hero;
                 return;
             }

@@ -297,10 +297,18 @@ pub struct BurnZone {
 #[derive(Component)]
 pub struct Hero;
 
-/// Visual Y offset for hero model (applied to scene child, not root entity).
-/// Keeps root entity at ground level for accurate blocking/distance checks.
+/// Visual adjustments for hero model (applied to scene child, not root entity).
+/// Keeps root entity transform clean for look_at and distance checks.
 #[derive(Component)]
-pub struct HeroModelYOffset(pub f32);
+pub struct HeroModelSetup {
+    pub y_offset: f32,
+    pub rotation_x: f32,
+}
+
+/// Local-space offset from entity origin to the model's visual center (Hips).
+/// Used to compensate entity position when rotating so the model doesn't jump.
+#[derive(Component)]
+pub struct HeroVisualOffset(pub Vec3);
 
 /// Where the hero is moving toward (None = standing still).
 #[derive(Component)]
@@ -379,6 +387,15 @@ pub struct HeroDamageReduction {
 /// Marker for enemies that need their animation set up after scene loads.
 #[derive(Component)]
 pub struct EnemyNeedsAnimation;
+
+/// Model rotation correction applied to scene root child (not entity).
+/// Persists model orientation independently of entity path-following rotation.
+#[derive(Component)]
+pub struct EnemyModelRotation(pub Quat);
+
+/// Marker for the knight model mounted on a cavalry horse.
+#[derive(Component)]
+pub struct CavalryKnight;
 
 /// Tracks which animation is playing for an enemy and stores graph node indices.
 #[derive(Component)]

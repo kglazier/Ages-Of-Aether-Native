@@ -29,10 +29,12 @@ pub fn wait_for_window(
 pub fn cleanup_game_world(
     mut commands: Commands,
     game_entities: Query<Entity, With<crate::components::GameWorldEntity>>,
+    mut debug_state: ResMut<crate::systems::debug::DebugState>,
 ) {
     for entity in &game_entities {
         commands.entity(entity).despawn_recursive();
     }
+    debug_state.show_overlay = false;
 }
 
 /// Runs once when entering Playing state.

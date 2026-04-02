@@ -77,7 +77,7 @@ pub fn spawn_hero(
         Transform::from_translation(spawn_pos + Vec3::new(0.0, stats.model_y_offset, 0.0))
             .with_scale(Vec3::splat(stats.model_scale)),
         Hero,
-        HeroModelYOffset(stats.model_y_offset),
+        HeroModelSetup { y_offset: stats.model_y_offset, rotation_x: stats.model_rotation_x },
         Health {
             current: stats.hp,
             max: stats.hp,
@@ -123,12 +123,12 @@ pub fn hero_consume_move_command(
 /// Moves the hero toward its move target.
 pub fn hero_movement(
     mut hero_q: Query<
-        (&mut Transform, &mut HeroMoveTarget, &HeroMoveSpeed),
+        (&mut Transform, &mut HeroMoveTarget, &HeroMoveSpeed, Option<&HeroVisualOffset>),
         (With<Hero>, Without<HeroRespawnTimer>),
     >,
     time: Res<Time>,
 ) {
-    for (mut transform, mut move_target, speed) in &mut hero_q {
+    for (mut transform, mut move_target, speed, visual_offset) in &mut hero_q {
         let Some(target) = move_target.0 else {
             continue;
         };
@@ -154,7 +154,11 @@ pub fn hero_movement(
             transform.translation.z += move_delta.z;
         }
 
-        // Face movement direction (model needs PI rotation to face look_at direction)
+        // Face movement direction, compensating entity position so the visual
+        // center (Hips) stays in place during rotation (prevents jump for offset models)
+        let offset = visual_offset.map_or(Vec3::ZERO, |o| o.0);
+        let old_world_offset = transform.rotation * offset;
+
         let look_target = Vec3::new(
             transform.translation.x + diff.x,
             transform.translation.y,
@@ -162,6 +166,13 @@ pub fn hero_movement(
         );
         transform.look_at(look_target, Vec3::Y);
         transform.rotate_y(std::f32::consts::PI);
+
+        if offset != Vec3::ZERO {
+            let new_world_offset = transform.rotation * offset;
+            let shift = old_world_offset - new_world_offset;
+            transform.translation.x += shift.x;
+            transform.translation.z += shift.z;
+        }
     }
 }
 
@@ -269,23 +280,27 @@ pub fn hero_respawn_tick(
     }
 }
 
-/// Applies the visual Y offset to the hero scene child once it loads.
-/// The hero entity stays at ground level; only the rendered model is raised.
+/// Applies visual rotation and Y offset to the hero's scene child once it loads.
+/// This keeps the hero entity's transform clean for look_at and distance checks,
+/// while the scene child handles model-specific corrections (Z-up models, etc).
 pub fn apply_hero_model_offset(
     mut commands: Commands,
-    hero_q: Query<(Entity, &Children, &HeroModelYOffset), With<Hero>>,
+    hero_q: Query<(Entity, &Children, &HeroModelSetup), With<Hero>>,
     mut transforms: Query<&mut Transform>,
 ) {
-    for (entity, children, offset) in &hero_q {
-        if offset.0 == 0.0 {
-            commands.entity(entity).remove::<HeroModelYOffset>();
-            continue;
-        }
-        // Apply offset to first child (the scene root)
+    for (entity, children, setup) in &hero_q {
+        // Apply to first child (the scene root)
         if let Some(&child) = children.iter().next() {
             if let Ok(mut tf) = transforms.get_mut(child) {
-                tf.translation.y += offset.0;
-                commands.entity(entity).remove::<HeroModelYOffset>();
+                if setup.rotation_x != 0.0 {
+                    tf.rotate_x(setup.rotation_x);
+                }
+                // Y offset is in world space, but child is scaled by parent.
+                // Convert: world_offset / parent_scale
+                // Parent scale is uniform, so we can read it from the parent entity.
+                // For now, just apply directly — the offset was designed for entity-level.
+                // We skip child-level Y offset since model_y_offset is on the entity transform.
+                commands.entity(entity).remove::<HeroModelSetup>();
             }
         }
     }
@@ -348,7 +363,7 @@ pub fn spawn_hero_visuals(
 
 /// Updates hero 3D health bar position and the selection ring.
 pub fn update_hero_visuals(
-    hero_q: Query<(&Transform, &GlobalTransform, &Health, Option<&HeroRespawnTimer>), With<Hero>>,
+    hero_q: Query<(&Transform, &GlobalTransform, &Health, Option<&HeroRespawnTimer>, Option<&HeroAnimState>), With<Hero>>,
     mut bar_q: Query<
         (&mut Transform, &MeshMaterial3d<StandardMaterial>, &HeroHealthBar3d),
         (Without<Hero>, Without<HeroHealthBarBg3d>, Without<HeroSelectionRing>),
@@ -365,11 +380,12 @@ pub fn update_hero_visuals(
         &Transform,
         (With<Camera3d>, Without<Hero>, Without<HeroHealthBar3d>, Without<HeroHealthBarBg3d>, Without<HeroSelectionRing>),
     >,
+    global_transforms: Query<&GlobalTransform, Without<Hero>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     selection: Res<Selection>,
     time: Res<Time>,
 ) {
-    let Ok((hero_tf, hero_global, health, respawn)) = hero_q.get_single() else {
+    let Ok((_hero_tf, hero_global, health, respawn, anim_state)) = hero_q.get_single() else {
         return;
     };
     let Ok(cam_tf) = camera_q.get_single() else {
@@ -377,9 +393,22 @@ pub fn update_hero_visuals(
     };
 
     let is_dead = respawn.is_some();
-    // Use global transform to find model's actual world XZ (handles rotated armatures)
+
+    // Track the Hips bone's world position when available — this gives us the model's
+    // actual visual center, accounting for scene-root rotation and bone offsets.
+    // Falls back to entity position for heroes without anim state yet.
     let world_pos = hero_global.translation();
-    let bar_pos = Vec3::new(world_pos.x, 2.5, world_pos.z);
+    let visual_xz = anim_state
+        .and_then(|a| a.hips_entity)
+        .and_then(|hips| global_transforms.get(hips).ok())
+        .map(|gt| {
+            let p = gt.translation();
+            (p.x, p.z)
+        })
+        .unwrap_or((world_pos.x, world_pos.z));
+
+    let bar_y = (world_pos.y + 1.8).max(2.5);
+    let bar_pos = Vec3::new(visual_xz.0, bar_y, visual_xz.1);
 
     // Update health bar fill
     for (mut transform, mat_handle, _) in &mut bar_q {
@@ -388,7 +417,11 @@ pub fn update_hero_visuals(
         } else {
             let hp_pct = (health.current / health.max).clamp(0.0, 1.0);
             let to_cam = (cam_tf.translation - bar_pos).normalize_or_zero();
-            transform.translation = bar_pos + to_cam * 0.02;
+            // Anchor bar to the left: offset by half the missing width in camera-right direction
+            let cam_right = cam_tf.rotation * Vec3::X;
+            let bar_width = 1.1; // match Rectangle width in spawn_hero_visuals
+            let left_offset = cam_right * (bar_width * 0.5 * (hp_pct - 1.0));
+            transform.translation = bar_pos + to_cam * 0.02 + left_offset;
             transform.rotation = cam_tf.rotation;
             transform.scale = Vec3::new(hp_pct, 1.0, 1.0);
 
@@ -422,9 +455,9 @@ pub fn update_hero_visuals(
             transform.translation = Vec3::new(0.0, -100.0, 0.0);
         } else {
             transform.translation = Vec3::new(
-                world_pos.x,
+                visual_xz.0,
                 0.05,
-                world_pos.z,
+                visual_xz.1,
             );
             // Flat on ground
             transform.rotation = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
@@ -757,6 +790,16 @@ pub fn setup_hero_animations(
 
         commands.entity(player_entity).insert(AnimationGraphHandle(graph_handle));
 
+        // Compute visual center offset: Hips position in entity-local space
+        // (accounts for scene-root rotation and parent scale)
+        if stats.model_rotation_x != 0.0 {
+            let rx = Quat::from_rotation_x(stats.model_rotation_x);
+            let rotated = rx * hips_bind_pos;
+            let offset = rotated * stats.model_scale;
+            commands.entity(hero_entity).insert(HeroVisualOffset(offset));
+            info!("HeroVisualOffset: ({:.3}, {:.3}, {:.3})", offset.x, offset.y, offset.z);
+        }
+
         commands.entity(hero_entity).insert(HeroAnimState {
             idle_node,
             walk_node,
@@ -773,17 +816,16 @@ pub fn setup_hero_animations(
             rotation_only_clips,
             rotation_only_stripped: false,
             armature_entity: armature_entity.or(Some(player_entity)),
-            armature_rotation_fix: if stats.model_rotation_x != 0.0 {
-                Some(Quat::from_rotation_x(stats.model_rotation_x))
-            } else {
-                None
-            },
+            // Rotation is now applied on the scene child at load time,
+            // not on the armature in PostUpdate (which conflicts with look_at).
+            armature_rotation_fix: None,
         });
         commands.entity(hero_entity).remove::<HeroNeedsAnimation>();
 
         info!("Hero {:?} anim graph: idle={}, attack={}, run={}, skip_hips={}, rot_only={}, armature={:?}",
               hero_entity, stats.idle_anim, stats.attack_anim, stats.run_anim,
               stats.skip_root_motion_cancel, stats.rotation_only_anims, armature_entity);
+
     }
 }
 
@@ -1048,5 +1090,6 @@ pub fn cancel_hero_root_motion(
                 tf.translation = Vec3::ZERO;
             }
         }
+
     }
 }

@@ -399,6 +399,27 @@ pub fn strip_enemy_clip_root_motion(
     }
 }
 
+/// Programmatic sword-swing for the static knight model mounted on cavalry horses.
+pub fn animate_cavalry_knight(
+    mut knights: Query<(&Parent, &mut Transform), With<CavalryKnight>>,
+    cavalry: Query<Option<&GolemBlocked>, With<Enemy>>,
+    time: Res<Time>,
+) {
+    let t = time.elapsed_secs();
+    for (parent, mut transform) in knights.iter_mut() {
+        let blocked = cavalry.get(parent.get()).ok().flatten().is_some();
+        if blocked {
+            // Forward/back thrust (X rotation)
+            let thrust = (t * 5.0).sin() * 0.25;
+            transform.rotation = Quat::from_rotation_x(thrust);
+        } else {
+            // Gentle riding bob
+            let bob = (t * 3.0).sin() * 0.05;
+            transform.rotation = Quat::from_rotation_x(bob);
+        }
+    }
+}
+
 /// Despawn dying enemies after their death timer expires.
 pub fn tick_dying_enemies(
     mut commands: Commands,
