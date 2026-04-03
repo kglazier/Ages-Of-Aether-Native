@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::animation::{AnimationTargetId, VariableCurve};
+use bevy::animation::{AnimationTarget, AnimationTargetId, VariableCurve};
 use crate::components::*;
 use crate::data::*;
 
@@ -8,6 +8,14 @@ use crate::data::*;
 pub struct EnemyClipsNeedStrip {
     pub handles: Vec<Handle<AnimationClip>>,
     pub stripped: bool,
+}
+
+/// Tracks clip handles that need bone name remapping (e.g. Mixamo → custom rig).
+#[derive(Component)]
+pub struct NeedsBoneRemap {
+    pub handles: Vec<Handle<AnimationClip>>,
+    pub bone_map: &'static [(&'static str, &'static str)],
+    pub remapped: bool,
 }
 
 /// After enemy scene loads, find AnimationPlayer and build animation graph.
@@ -20,6 +28,7 @@ pub fn setup_enemy_animations(
     enemies: Query<(Entity, &Children, &EnemyTypeId), With<EnemyNeedsAnimation>>,
     children_q: Query<&Children>,
     anim_players: Query<Entity, With<AnimationPlayer>>,
+    names: Query<&Name>,
     asset_server: Res<AssetServer>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
@@ -49,23 +58,48 @@ pub fn setup_enemy_animations(
             let player_entity = if let Some(pe) = player_entity {
                 pe
             } else {
-                // Find a suitable host entity in the hierarchy
-                let host = children.iter().next().copied();
-                let Some(host) = host else { continue };
-                let mut candidate = host;
-                let mut sub_stack: Vec<Entity> = vec![host];
-                while let Some(e) = sub_stack.pop() {
-                    candidate = e;
-                    if let Ok(gc) = children_q.get(e) {
-                        if !gc.is_empty() {
-                            candidate = e;
+                // Find the Armature entity by name
+                let mut armature = None;
+                let mut search: Vec<Entity> = children.iter().copied().collect();
+                while let Some(e) = search.pop() {
+                    if let Ok(name) = names.get(e) {
+                        if name.as_str() == "Armature" || name.as_str().contains("CharacterArmature") {
+                            armature = Some(e);
                             break;
                         }
-                        sub_stack.extend(gc.iter());
+                    }
+                    if let Ok(gc) = children_q.get(e) {
+                        search.extend(gc.iter());
                     }
                 }
-                commands.entity(candidate).insert(AnimationPlayer::default());
-                candidate
+                if let Some(armature) = armature {
+                    // Insert AnimationPlayer + AnimationTarget on armature and all bones
+                    commands.entity(armature).insert(AnimationPlayer::default());
+                    let armature_name = names.get(armature)
+                        .map(|n| n.clone())
+                        .unwrap_or_else(|_| Name::new("Armature"));
+                    let root_path = vec![armature_name.clone()];
+                    commands.entity(armature).insert(AnimationTarget {
+                        id: AnimationTargetId::from_names(root_path.iter()),
+                        player: armature,
+                    });
+                    if let Ok(arm_children) = children_q.get(armature) {
+                        for &child in arm_children.iter() {
+                            insert_enemy_anim_targets(
+                                &mut commands, child, armature,
+                                &root_path, &children_q, &names,
+                            );
+                        }
+                    }
+                    info!("Inserted AnimationTarget on enemy bone hierarchy for {:?}", type_id.0);
+                    armature
+                } else {
+                    // Fallback: use first child
+                    let host = children.iter().next().copied();
+                    let Some(host) = host else { continue };
+                    commands.entity(host).insert(AnimationPlayer::default());
+                    host
+                }
             };
 
             let walk_clip: Handle<AnimationClip> = asset_server.load(format!("{}#Animation0", anim_files[0]));
@@ -203,6 +237,40 @@ pub fn update_enemy_animations(
     }
 }
 
+/// Applies rocking/tilt overlay on enemies whose all anim_indices are the same
+/// (single embedded clip used for all states, e.g. sabertooth).
+/// Rocks side-to-side when blocked (attack), tilts forward when dying.
+pub fn rock_single_clip_enemies(
+    enemies: Query<(&EnemyAnimState, &EnemyTypeId, &Children, Option<&GolemBlocked>, Option<&EnemyDying>, Option<&Flying>)>,
+    mut transforms: Query<&mut Transform>,
+    time: Res<Time>,
+) {
+    for (anim_state, type_id, children, blocked, dying, flying) in &enemies {
+        // Skip flying enemies — their child rotation is set by EnemyModelRotation
+        if flying.is_some() { continue; }
+        let stats = crate::data::enemy_stats(type_id.0);
+        // Only apply to enemies whose walk/idle/attack/death all point to the same clip
+        let [w, i, a, d] = stats.anim_indices;
+        if w != i || w != a || w != d { continue; }
+        if w == 255 { continue; } // procedural, not embedded
+
+        let Some(&child) = children.iter().next() else { continue };
+        let Ok(mut t) = transforms.get_mut(child) else { continue };
+
+        if dying.is_some() {
+            // Tilt forward on death
+            t.rotation = Quat::from_rotation_x(0.5);
+        } else if blocked.is_some() {
+            // Rock back and forth when attacking
+            let rock = (time.elapsed_secs() * 6.0).sin() * 0.3;
+            t.rotation = Quat::from_rotation_x(rock);
+        } else {
+            // Walking normally — reset rotation
+            t.rotation = Quat::IDENTITY;
+        }
+    }
+}
+
 /// Discovers quadruped leg bones by name after the GLTF scene loads.
 /// Looks for bones named FrontLeg.L/R, BackLeg.L/R (or Mixamo equivalents).
 /// Captures bind pose Euler Y/Z so the walk oscillation only replaces the X component.
@@ -233,6 +301,9 @@ pub fn discover_leg_bones(
                     else if n.ends_with("rightupleg") { Some(std::f32::consts::PI) }
                     else if n.ends_with("leftarm") && !n.contains("fore") { Some(std::f32::consts::PI) }
                     else if n.ends_with("rightarm") && !n.contains("fore") { Some(0.0) }
+                    // Minotaur-style: Leg1.L/R (upper leg = hip joint)
+                    else if n.starts_with("leg1.l") { Some(0.0) }
+                    else if n.starts_with("leg1.r") { Some(std::f32::consts::PI) }
                     else { None };
 
                 if let Some(phase_offset) = leg_phase {
@@ -262,7 +333,7 @@ pub fn discover_leg_bones(
                 stack.extend(gc.iter());
             }
         }
-        if leg_bones.len() >= 4 {
+        if leg_bones.len() >= 2 {
             info!("Discovered {} leg + {} foot bones for procedural walk", leg_bones.len(), foot_bones.len());
             commands.entity(enemy_entity).insert(QuadLegBones { legs: leg_bones, feet: foot_bones });
             commands.entity(enemy_entity).remove::<NeedsLegDiscovery>();
@@ -291,13 +362,21 @@ pub fn animate_procedural_walk(
             continue;
         }
 
+        // Headbutt animation when blocked by golem
+        if blocked.is_some() {
+            anim.phase += dt * 6.0;
+            let headbutt = (anim.phase * 4.0).sin() * 0.25;
+            if let Some(&child) = children.iter().next() {
+                if let Ok(mut t) = transforms.get_mut(child) {
+                    t.rotation = Quat::from_rotation_x(headbutt);
+                }
+            }
+            continue;
+        }
+
         // Three.js uses a global walkTime shared across all enemies.
         // Speed determines frequency: sin(walkTime * speed + phase).
-        let move_speed = if blocked.is_some() || dying.is_some() {
-            0.0
-        } else {
-            follower.map(|f| f.speed).unwrap_or(2.0)
-        };
+        let move_speed = follower.map(|f| f.speed).unwrap_or(2.0);
         // Keep per-enemy phase for bob/lean fallback
         anim.phase += dt * move_speed * 4.0;
 
@@ -362,12 +441,6 @@ pub fn strip_enemy_clip_root_motion(
     mut enemies: Query<&mut EnemyClipsNeedStrip>,
     mut clips: ResMut<Assets<AnimationClip>>,
 ) {
-    // The Hips bone is the root motion source in Mixamo animations.
-    // Its AnimationTargetId is derived from the path: Armature > mixamorig:Hips
-    let hips_id = AnimationTargetId::from_names(
-        [Name::new("Armature"), Name::new("mixamorig:Hips")].iter(),
-    );
-
     for mut strip in &mut enemies {
         if strip.stripped { continue; }
 
@@ -378,23 +451,20 @@ pub fn strip_enemy_clip_root_motion(
         for handle in &handles {
             if let Some(clip) = clips.get_mut(handle) {
                 // For each bone target in the clip:
-                for (target_id, curves) in clip.curves_mut().iter_mut() {
-                    if *target_id == hips_id {
-                        // Root bone: strip position tracks, keep rotation
-                        // GLTF order: [translation(0), rotation(1), scale(2)]
-                        if curves.len() >= 2 {
-                            let rotation = VariableCurve(curves[1].0.clone_value());
-                            curves.clear();
-                            curves.push(rotation);
-                        }
-                    } else if curves.len() == 3 {
-                        // Non-root bone with 3 curves: strip scale (index 2), keep translation + rotation
-                        curves.truncate(2);
+                for (_target_id, curves) in clip.curves_mut().iter_mut() {
+                    // Strip all translation + scale, keep only rotation.
+                    // GLTF order: [translation(0), rotation(1), scale(2)]
+                    // This is necessary because external anim clips contain absolute
+                    // bone positions from a different character's skeleton.
+                    if curves.len() >= 2 {
+                        let rotation = VariableCurve(curves[1].0.clone_value());
+                        curves.clear();
+                        curves.push(rotation);
                     }
                 }
             }
         }
-        info!("Stripped root-bone position + all scale tracks from enemy clips");
+        info!("Stripped translation + scale from enemy clips (rotation-only mode)");
         strip.stripped = true;
     }
 }
@@ -416,6 +486,29 @@ pub fn animate_cavalry_knight(
             // Gentle riding bob
             let bob = (t * 3.0).sin() * 0.05;
             transform.rotation = Quat::from_rotation_x(bob);
+        }
+    }
+}
+
+/// Recursively insert AnimationTarget on bone entities for external-anim enemies.
+fn insert_enemy_anim_targets(
+    commands: &mut Commands,
+    entity: Entity,
+    player: Entity,
+    parent_path: &[Name],
+    children_q: &Query<&Children>,
+    names: &Query<&Name>,
+) {
+    let name = names.get(entity)
+        .map(|n| n.clone())
+        .unwrap_or_else(|_| Name::new(format!("bone_{}", entity.index())));
+    let mut path = parent_path.to_vec();
+    path.push(name);
+    let id = AnimationTargetId::from_names(path.iter());
+    commands.entity(entity).insert(AnimationTarget { id, player });
+    if let Ok(children) = children_q.get(entity) {
+        for &child in children.iter() {
+            insert_enemy_anim_targets(commands, child, player, &path, children_q, names);
         }
     }
 }

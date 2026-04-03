@@ -200,9 +200,10 @@ fn spawn_enemy(
             EnemyType::Dodo => 0.5,
             EnemyType::Caveman => 1.0,
             EnemyType::Shaman => 0.0,
-            EnemyType::Legionary => 2.0,
+            EnemyType::Legionary => 0.7,
             EnemyType::Cavalry => 0.0,
             EnemyType::Medicus => 0.0,
+            EnemyType::Minotaur => 0.8,
             _ => 0.0,
         }
     };
@@ -246,6 +247,7 @@ fn spawn_enemy(
         },
         GameWorldEntity,
         EnemyNeedsAnimation,
+        NeedsBlendFix,
     ));
 
     // Apply tint if this enemy type needs recoloring
@@ -256,6 +258,11 @@ fn spawn_enemy(
     // Flying enemies can't be blocked by golems
     if stats.is_flying {
         entity_commands.insert(Flying);
+    }
+
+    // Boss enemies get a marker for distinct health bar color
+    if crate::data::is_boss_type(enemy_type) {
+        entity_commands.insert(BossEnemy);
     }
 
     // Healer enemies get an aura

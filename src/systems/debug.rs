@@ -99,6 +99,7 @@ pub fn manage_debug_overlay(
         commands
             .spawn((
                 DebugOverlay,
+                GameWorldEntity,
                 Node {
                     position_type: PositionType::Absolute,
                     right: Val::Px(16.0),

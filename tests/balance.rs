@@ -16,6 +16,13 @@ use ages_of_aether::data::*;
 
 const SELL_REFUND: f32 = 0.6;
 
+// Player ability simulation constants
+const METEOR_SIM_DAMAGE: f32 = 200.0;
+const METEOR_SIM_RADIUS_ENEMIES: u32 = 5;  // meteor kills ~5 enemies worth per use
+const METEOR_COOLDOWN_WAVES: u32 = 2;      // available every 2 waves
+const REINFORCEMENT_SIM_BLOCK: u32 = 3;    // reinforcements block ~3 enemies per use
+const REINFORCEMENT_COOLDOWN_WAVES: u32 = 3; // available every 3 waves
+
 /// Star rating based on fraction of starting lives remaining.
 fn star_rating(lives: u32, max_lives: u32) -> u32 {
     if lives == 0 {
@@ -119,6 +126,12 @@ struct PlacedTower {
     element: Element,
     level: u8,
     total_invested: u32,
+    specialized: bool,
+    spec_level: u8, // 0 = not specialized, 1-3 = spec tier
+    /// Cumulative damage multiplier from specialization + spec upgrades.
+    spec_damage_mult: f32,
+    /// Cumulative range bonus from spec upgrades.
+    spec_range_bonus: f32,
 }
 
 impl PlacedTower {
@@ -127,6 +140,10 @@ impl PlacedTower {
             element,
             level: 0,
             total_invested: tower_stats(element, 0).cost,
+            specialized: false,
+            spec_level: 0,
+            spec_damage_mult: 1.0,
+            spec_range_bonus: 0.0,
         }
     }
 
@@ -135,6 +152,21 @@ impl PlacedTower {
             return None;
         }
         Some(tower_stats(self.element, self.level + 1).cost)
+    }
+
+    /// Cost to specialize (requires level 2, not yet specialized).
+    fn spec_cost(&self) -> Option<u32> {
+        if self.level < 2 || self.specialized { return None; }
+        let specs = element_specializations(self.element);
+        Some(specs[0].1.cost) // pick first spec option
+    }
+
+    /// Cost to upgrade spec to next tier.
+    fn spec_upgrade_cost(&self) -> Option<u32> {
+        if !self.specialized || self.spec_level >= MAX_SPEC_LEVEL { return None; }
+        let specs = element_specializations(self.element);
+        let spec_type = specs[0].0;
+        spec_upgrade_info(spec_type, self.spec_level + 1).map(|u| u.cost)
     }
 
     fn sell_value(&self) -> u32 {
@@ -295,6 +327,46 @@ fn ai_spend(
                     }
                 }
             }
+
+            // Phase 4: Specialize maxed towers (Ice > Lightning > Fire > Earth)
+            let spec_order = [Element::Ice, Element::Lightning, Element::Fire, Element::Earth];
+            for &elem in &spec_order {
+                for t in towers.iter_mut() {
+                    if t.element == elem && t.level == 2 && !t.specialized {
+                        if let Some(cost) = t.spec_cost() {
+                            if *gold >= cost {
+                                *gold -= cost;
+                                t.total_invested += cost;
+                                t.specialized = true;
+                                t.spec_level = 1;
+                                // Base spec gives ~1.5x damage on average
+                                t.spec_damage_mult = 1.5;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Phase 5: Upgrade spec tiers on specialized towers
+            for &elem in &spec_order {
+                for t in towers.iter_mut() {
+                    if t.element == elem && t.specialized && t.spec_level < MAX_SPEC_LEVEL {
+                        if let Some(cost) = t.spec_upgrade_cost() {
+                            if *gold >= cost {
+                                *gold -= cost;
+                                t.total_invested += cost;
+                                t.spec_level += 1;
+                                let specs = element_specializations(t.element);
+                                let spec_type = specs[0].0;
+                                if let Some(upgrade) = spec_upgrade_info(spec_type, t.spec_level) {
+                                    t.spec_damage_mult *= upgrade.damage_mult;
+                                    t.spec_range_bonus += upgrade.range_bonus;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -363,18 +435,18 @@ fn simulate_level(level: u32, strategy: Strategy) -> SimResult {
             let mut total_damage_per_enemy: f32 = 0.0;
             for t in &towers {
                 let t_stats = tower_stats(t.element, t.level);
-                let time_in_range = (t_stats.range / scaled_speed).min(traverse_time);
+                let range = t_stats.range + t.spec_range_bonus;
+                let time_in_range = (range / scaled_speed).min(traverse_time);
                 // Slow debuff from Ice: enemies move 50% slower => 2x time in range
                 let slow_factor = if has_slow && t.element != Element::Ice {
-                    // Ice tower itself applies the slow, so its own time_in_range
-                    // benefits too, but conservatively use 1.5x for Ice tower
                     1.5
                 } else if has_slow {
                     1.5
                 } else {
                     1.0
                 };
-                let dps = effective_dps(t.element, t.level, stats.armor, stats.magic_resist, has_slow);
+                let dps = effective_dps(t.element, t.level, stats.armor, stats.magic_resist, has_slow)
+                    * t.spec_damage_mult;
                 total_damage_per_enemy += dps * time_in_range * slow_factor;
             }
 
@@ -393,11 +465,12 @@ fn simulate_level(level: u32, strategy: Strategy) -> SimResult {
                         continue; // Earth can't hit flyers
                     }
                     let t_stats = tower_stats(t.element, t.level);
-                    let time_in_range = (t_stats.range / scaled_speed).min(traverse_time);
+                    let range = t_stats.range + t.spec_range_bonus;
+                    let time_in_range = (range / scaled_speed).min(traverse_time);
                     let slow_factor = if has_slow { 1.5 } else { 1.0 };
                     let dps = effective_dps(
                         t.element, t.level, stats.armor, stats.magic_resist, has_slow,
-                    );
+                    ) * t.spec_damage_mult;
                     flying_dmg += dps * time_in_range * slow_factor;
                 }
                 let frac = (flying_dmg / scaled_hp).min(1.0);
@@ -410,6 +483,28 @@ fn simulate_level(level: u32, strategy: Strategy) -> SimResult {
 
             wave_gold_reward += enemies_killed * stats.gold_reward;
             wave_leaks += enemies_leaked;
+        }
+
+        // --- Apply player abilities to reduce leaks ---
+        match strategy {
+            Strategy::Easy => {
+                // Easy AI doesn't use abilities
+            }
+            Strategy::Medium => {
+                // Medium uses meteor every 2 waves (starting wave 3)
+                if wave_num >= 3 && wave_num % METEOR_COOLDOWN_WAVES == 1 {
+                    wave_leaks = wave_leaks.saturating_sub(METEOR_SIM_RADIUS_ENEMIES);
+                }
+            }
+            Strategy::Hard => {
+                // Hard uses meteor every 2 waves and reinforcements every 3 waves
+                if wave_num >= 3 && wave_num % METEOR_COOLDOWN_WAVES == 1 {
+                    wave_leaks = wave_leaks.saturating_sub(METEOR_SIM_RADIUS_ENEMIES);
+                }
+                if wave_num >= 4 && wave_num % REINFORCEMENT_COOLDOWN_WAVES == 1 {
+                    wave_leaks = wave_leaks.saturating_sub(REINFORCEMENT_SIM_BLOCK);
+                }
+            }
         }
 
         // Subtract leaked enemies from lives

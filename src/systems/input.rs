@@ -20,6 +20,7 @@ pub fn handle_world_click(
     towers: Query<(Entity, &Transform), With<Tower>>,
     hero_q: Query<(&Transform, Option<&HeroAnimState>), (With<Hero>, Without<Tower>, Without<BuildSpot>, Without<HeroRespawnTimer>)>,
     bone_globals: Query<&GlobalTransform, (Without<Hero>, Without<Tower>, Without<BuildSpot>)>,
+    golems: Query<(&Transform, &GolemOwner), With<Golem>>,
     mut selection: ResMut<Selection>,
     mut hero_move_cmd: ResMut<crate::resources::HeroMoveCommand>,
     // Don't process world clicks if a UI button is being hovered/pressed
@@ -90,6 +91,15 @@ pub fn handle_world_click(
         let dist = world_pos.distance(tower_transform.translation);
         if dist < 1.5 {
             *selection = Selection::Tower(tower_entity);
+            return;
+        }
+    }
+
+    // Check golems — clicking a golem enters rally point mode for its owner tower
+    for (golem_tf, owner) in &golems {
+        let dist = world_pos.distance(golem_tf.translation);
+        if dist < 1.5 {
+            *selection = Selection::SettingRallyPoint(owner.0);
             return;
         }
     }

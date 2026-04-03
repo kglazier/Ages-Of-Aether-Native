@@ -544,9 +544,10 @@ pub fn update_range_indicator(
         commands.entity(entity).despawn();
     }
 
-    // Only show if a tower is selected
-    let Selection::Tower(tower_entity) = *selection else {
-        return;
+    // Show if a tower is selected or we're setting rally point
+    let tower_entity = match *selection {
+        Selection::Tower(e) | Selection::SettingRallyPoint(e) => e,
+        _ => return,
     };
 
     let Ok((tower_transform, range)) = towers.get(tower_entity) else {
@@ -569,6 +570,7 @@ pub fn update_range_indicator(
         Transform::from_translation(Vec3::new(pos.x, 0.15, pos.z))
             .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
         RangeIndicator,
+        GameWorldEntity,
     ));
 }
 
@@ -651,6 +653,7 @@ pub fn apply_enemy_tints(
                 new_mat.base_color_texture = None;
                 new_mat.perceptual_roughness = 1.0;
                 new_mat.metallic = 0.0;
+                new_mat.alpha_mode = AlphaMode::Opaque;
                 // Subtle emissive so color reads in shadow
                 new_mat.emissive = LinearRgba::new(r * 0.15, g * 0.15, b * 0.15, 1.0);
 
@@ -709,6 +712,43 @@ fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
     if t < 0.5 { return q; }
     if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
     p
+}
+
+/// Forces BLEND materials on enemy scene children to OPAQUE.
+/// Retries each frame until enough mesh children are found (scene fully loaded).
+pub fn fix_blend_enemy_materials(
+    mut commands: Commands,
+    enemies: Query<(Entity, &Children), With<NeedsBlendFix>>,
+    children_q: Query<&Children>,
+    mesh_q: Query<&MeshMaterial3d<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for (entity, children) in &enemies {
+        let mut mesh_count = 0;
+        let mut fixed_count = 0;
+        let mut stack: Vec<Entity> = children.iter().copied().collect();
+        while let Some(child) = stack.pop() {
+            if let Ok(mat_handle) = mesh_q.get(child) {
+                mesh_count += 1;
+                if let Some(mat) = materials.get_mut(&mat_handle.0) {
+                    if mat.alpha_mode == AlphaMode::Blend {
+                        mat.alpha_mode = AlphaMode::Opaque;
+                        fixed_count += 1;
+                    }
+                }
+            }
+            if let Ok(grandchildren) = children_q.get(child) {
+                stack.extend(grandchildren.iter());
+            }
+        }
+        // Remove marker once we've found any mesh children
+        if mesh_count >= 1 {
+            if fixed_count > 0 {
+                info!("Fixed {fixed_count} BLEND materials on enemy {:?}", entity);
+            }
+            commands.entity(entity).remove::<NeedsBlendFix>();
+        }
+    }
 }
 
 /// Hides ground-plane / stand meshes that some Sketchfab models include.
@@ -783,6 +823,7 @@ pub fn spawn_health_bars(
             })),
             Transform::default(),
             HealthBarBg(entity),
+            GameWorldEntity,
         ));
 
         // Fill (starts green)
@@ -796,6 +837,7 @@ pub fn spawn_health_bars(
             })),
             Transform::default(),
             HealthBar(entity),
+            GameWorldEntity,
         ));
 
         // Thin green ring under healer enemies
@@ -812,6 +854,7 @@ pub fn spawn_health_bars(
                 })),
                 Transform::default(),
                 HealerRing(entity),
+                GameWorldEntity,
             ));
         }
     }
@@ -820,7 +863,7 @@ pub fn spawn_health_bars(
 /// Updates HP bar positions (billboard toward camera), scale, and color.
 pub fn update_health_bars(
     mut commands: Commands,
-    enemies: Query<(&Transform, &Health), With<Enemy>>,
+    enemies: Query<(&Transform, &Health, Option<&BossEnemy>), With<Enemy>>,
     mut bars: Query<
         (Entity, &HealthBar, &mut Transform, &MeshMaterial3d<StandardMaterial>),
         (Without<Enemy>, Without<HealthBarBg>),
@@ -839,13 +882,15 @@ pub fn update_health_bars(
 
     // Update fill bars
     for (entity, bar, mut transform, mat_handle) in &mut bars {
-        let Ok((enemy_tf, health)) = enemies.get(bar.0) else {
+        let Ok((enemy_tf, health, boss)) = enemies.get(bar.0) else {
             commands.entity(entity).despawn();
             continue;
         };
 
         let hp_pct = (health.current / health.max).clamp(0.0, 1.0);
-        let bar_pos = enemy_tf.translation + Vec3::Y * HP_BAR_Y_OFFSET;
+        // Scale HP bar height with model size so it's always above the head
+        let scale_factor = (enemy_tf.scale.x * 2.5).clamp(1.0, 2.5);
+        let bar_pos = enemy_tf.translation + Vec3::Y * HP_BAR_Y_OFFSET * scale_factor;
 
         // Billboard: face camera
         transform.rotation = cam_tf.rotation;
@@ -858,20 +903,25 @@ pub fn update_health_bars(
         transform.translation = bar_pos + to_camera * 0.02 + offset;
         transform.scale = Vec3::new(hp_pct, 1.0, 1.0);
 
-        // Color: green → yellow → red
+        // Color: bosses always reddish-orange, others green → yellow → red
         if let Some(mat) = materials.get_mut(&mat_handle.0) {
-            mat.base_color = hp_color(hp_pct);
+            mat.base_color = if boss.is_some() {
+                Color::srgb(0.9, 0.35, 0.1)
+            } else {
+                hp_color(hp_pct)
+            };
         }
     }
 
     // Update background bars
     for (entity, bg, mut transform) in &mut bg_bars {
-        let Ok((enemy_tf, _)) = enemies.get(bg.0) else {
+        let Ok((enemy_tf, _, _)) = enemies.get(bg.0) else {
             commands.entity(entity).despawn();
             continue;
         };
 
-        let bar_pos = enemy_tf.translation + Vec3::Y * HP_BAR_Y_OFFSET;
+        let scale_factor = (enemy_tf.scale.x * 2.5).clamp(1.0, 2.5);
+        let bar_pos = enemy_tf.translation + Vec3::Y * HP_BAR_Y_OFFSET * scale_factor;
         transform.rotation = cam_tf.rotation;
         transform.translation = bar_pos;
     }
@@ -912,6 +962,7 @@ pub fn check_enemy_leak(
     mut wave: ResMut<WaveState>,
     audio_assets: Option<Res<super::audio::AudioAssets>>,
     level_path: Res<crate::resources::LevelPath>,
+    vol_settings: Res<VolumeSettings>,
 ) {
     let last_segment = level_path.0.len() - 1;
     let mut leaked = false;
@@ -930,7 +981,10 @@ pub fn check_enemy_leak(
             if audio.all_loaded {
                 commands.spawn((
                     AudioPlayer(audio.enemy_leak.clone()),
-                    PlaybackSettings::DESPAWN,
+                    PlaybackSettings {
+                        volume: bevy::audio::Volume::new(vol_settings.sfx),
+                        ..PlaybackSettings::DESPAWN
+                    },
                 ));
             }
         }

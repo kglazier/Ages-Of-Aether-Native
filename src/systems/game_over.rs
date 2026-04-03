@@ -11,6 +11,7 @@ pub fn check_game_over(
     mut next_state: ResMut<NextState<AppState>>,
     mut outcome: ResMut<GameOutcome>,
     audio_assets: Option<Res<AudioAssets>>,
+    vol_settings: Res<VolumeSettings>,
 ) {
     // Defeat: ran out of lives
     if game.lives == 0 {
@@ -20,7 +21,10 @@ pub fn check_game_over(
             if audio.all_loaded {
                 commands.spawn((
                     AudioPlayer(audio.defeat.clone()),
-                    PlaybackSettings::DESPAWN,
+                    PlaybackSettings {
+                        volume: bevy::audio::Volume::new(vol_settings.sfx),
+                        ..PlaybackSettings::DESPAWN
+                    },
                 ));
             }
         }
@@ -38,7 +42,10 @@ pub fn check_game_over(
             if audio.all_loaded {
                 commands.spawn((
                     AudioPlayer(audio.victory.clone()),
-                    PlaybackSettings::DESPAWN,
+                    PlaybackSettings {
+                        volume: bevy::audio::Volume::new(vol_settings.sfx),
+                        ..PlaybackSettings::DESPAWN
+                    },
                 ));
             }
         }

@@ -9,6 +9,21 @@ use crate::data::EnemyType;
 #[derive(Component)]
 pub struct GameWorldEntity;
 
+/// Marker: enemy needs BLEND→OPAQUE material fix after scene loads.
+#[derive(Component)]
+pub struct NeedsBlendFix;
+
+/// Lava stream segment — animated emissive pulsing to simulate flow.
+#[derive(Component)]
+pub struct LavaStream {
+    /// Phase offset so each segment pulses at different times (simulates flow direction).
+    pub phase: f32,
+}
+
+/// Marker for volcano model — used to find and animate its lava materials.
+#[derive(Component)]
+pub struct VolcanoModel;
+
 #[derive(Component)]
 pub struct Health {
     pub current: f32,
@@ -268,6 +283,10 @@ pub struct LastKnownLevel(pub u8);
 #[derive(Component, Clone, Copy)]
 pub struct TowerSpec(pub crate::data::TowerSpecialization);
 
+/// Tracks the specialization upgrade tier (1 = base spec, 2 and 3 are upgrades).
+#[derive(Component, Clone, Copy)]
+pub struct SpecLevel(pub u8);
+
 /// Propagated onto projectiles from specialized towers.
 #[derive(Component, Clone, Copy)]
 pub struct ProjectileSpec(pub crate::data::TowerSpecialization);
@@ -286,6 +305,12 @@ pub struct TowerAura {
 pub struct BurnZone {
     pub radius: f32,
     pub dps: f32,
+    pub remaining: f32,
+}
+
+/// Temporary reinforcement soldier from the global ability.
+#[derive(Component)]
+pub struct ReinforcementSoldier {
     pub remaining: f32,
 }
 
@@ -446,6 +471,10 @@ pub struct EnemyDying {
 // ---------------------------------------------------------------------------
 // Health bars
 // ---------------------------------------------------------------------------
+
+/// Marker for boss enemies (always reddish-orange health bar).
+#[derive(Component)]
+pub struct BossEnemy;
 
 /// HP bar fill that tracks an enemy and scales with health percentage.
 #[derive(Component)]

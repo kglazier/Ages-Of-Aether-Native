@@ -144,7 +144,7 @@ pub fn setup_showcase(
         ModelEntry { path: "models/enemies/legionary.glb", label: "Legionary", scale: 0.04, y_offset: 2.0, anim: "models/enemies/anims/sword-parry.glb" },
         ModelEntry { path: "models/enemies/shaman.glb", label: "Shaman", scale: 2.0, y_offset: 0.0, anim: idle },
         ModelEntry { path: "models/enemies/medicus.glb", label: "Medicus", scale: 2.0, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/minotaur.bak.glb", label: "Minotaur", scale: 1.0, y_offset: 0.0, anim: idle },
+        ModelEntry { path: "models/enemies/minotaur-mixamo.glb", label: "Minotaur", scale: 0.02, y_offset: 0.0, anim: idle },
         ModelEntry { path: "models/enemies/sabertooth.glb", label: "Sabertooth", scale: 2.0, y_offset: 0.0, anim: idle },
         ModelEntry { path: "models/enemies/lion.glb", label: "Lion", scale: 3.0, y_offset: 0.0, anim: idle },
         ModelEntry { path: "models/enemies/cavalry-knight.glb", label: "Cavalry Knight", scale: 0.01, y_offset: 0.0, anim: idle },
@@ -395,6 +395,11 @@ pub fn setup_model_debug(
         ("Eagle rotY=-90",   eagle, 0.04, eagle_anim, 0.0, false),
         ("Eagle rotY=+90",   eagle, 0.04, eagle_anim, 0.0, false),
         ("Eagle rotY=180",   eagle, 0.04, eagle_anim, 0.0, false),
+        // Row 3: Minotaur anim variants
+        ("Mino idle",  "models/enemies/minotaur-mixamo.glb", 1.2, "models/enemies/anims/idle.glb#Animation0", 0.0, false),
+        ("Mino walk",  "models/enemies/minotaur-mixamo.glb", 1.2, "models/enemies/anims/crouch-walk.glb#Animation0", 0.0, false),
+        ("Mino atk",   "models/enemies/minotaur-mixamo.glb", 1.2, "models/enemies/anims/attack.glb#Animation0", 0.0, false),
+        ("Mino die",   "models/enemies/minotaur-mixamo.glb", 1.2, "models/enemies/anims/die.glb#Animation0", 0.0, false),
     ];
 
     // Y-rotation overrides for eagle variants (indices 4-7)
@@ -483,7 +488,7 @@ pub fn setup_model_debug(
         ("Cav: Combined", CavalryDebugStyle::Combined),
     ];
     for (ci, (label, style)) in cavalry_styles.into_iter().enumerate() {
-        let idx = 8 + ci; // continue after row 2
+        let idx = 12 + ci; // continue after row 3 (minotaur)
         let col = idx % cols;
         let row = idx / cols;
         let x = (col as f32 - cols as f32 / 2.0 + 0.5) * spacing;

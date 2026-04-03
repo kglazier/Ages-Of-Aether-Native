@@ -6,6 +6,10 @@ use crate::data::*;
 #[derive(Resource, Default)]
 pub struct SpecializationChosen(pub Option<TowerSpecialization>);
 
+/// Resource: signals a spec upgrade was requested from the UI.
+#[derive(Resource, Default)]
+pub struct SpecUpgradeRequested(pub bool);
+
 /// Apply specialization to the selected tower: modify stats, spawn aura if needed.
 pub fn apply_specialization(
     mut commands: Commands,
@@ -91,7 +95,7 @@ pub fn apply_specialization(
         }
     }
 
-    commands.entity(entity).insert(TowerSpec(spec));
+    commands.entity(entity).insert((TowerSpec(spec), SpecLevel(1)));
 
     // Play upgrade SFX
     if let Some(audio) = audio_assets {
@@ -156,6 +160,61 @@ pub fn tick_tower_auras(
             _ => {}
         }
     }
+}
+
+/// Upgrade an already-specialized tower to the next spec level.
+pub fn apply_spec_upgrade(
+    mut upgrade_req: ResMut<SpecUpgradeRequested>,
+    mut selection: ResMut<crate::resources::Selection>,
+    mut towers: Query<(
+        Entity,
+        &TowerSpec,
+        &mut SpecLevel,
+        &mut TowerInvestment,
+        &mut AttackDamage,
+        &mut AttackRange,
+    ), With<Tower>>,
+    mut game: ResMut<crate::resources::GameData>,
+    audio_assets: Option<Res<super::audio::AudioAssets>>,
+    mut commands: Commands,
+) {
+    if !upgrade_req.0 { return; }
+    upgrade_req.0 = false;
+
+    let crate::resources::Selection::Tower(tower_entity) = *selection else { return };
+
+    let Ok((entity, spec, mut spec_level, mut investment, mut damage, mut range)) =
+        towers.get_mut(tower_entity)
+    else {
+        return;
+    };
+
+    let next_level = spec_level.0 + 1;
+    let Some(upgrade) = spec_upgrade_info(spec.0, next_level) else { return };
+    if game.gold < upgrade.cost { return; }
+
+    game.gold -= upgrade.cost;
+    investment.0 += upgrade.cost;
+    spec_level.0 = next_level;
+
+    // Apply stat boosts
+    damage.0 *= upgrade.damage_mult;
+    range.0 += upgrade.range_bonus;
+
+    // Play upgrade SFX
+    if let Some(audio) = audio_assets {
+        if audio.all_loaded {
+            commands.spawn((
+                AudioPlayer(audio.tower_upgrade.clone()),
+                PlaybackSettings::DESPAWN,
+            ));
+        }
+    }
+
+    // Refresh tower panel
+    *selection = crate::resources::Selection::Tower(entity);
+
+    info!("Spec upgraded to level {}: {:?}", next_level, spec.0);
 }
 
 /// Tick burn zones (from Inferno Cannon impacts) — damage enemies standing in them.

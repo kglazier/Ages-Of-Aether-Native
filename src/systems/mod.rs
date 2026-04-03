@@ -11,6 +11,7 @@ mod hero;
 mod input;
 pub mod logbook_preview;
 mod path;
+pub mod player_ability;
 pub mod setup;
 pub mod showcase;
 pub mod tower_spec;
@@ -143,10 +144,13 @@ impl Plugin for GamePlugin {
         app.add_systems(
             Update,
             (
+                golem::strip_golem_root_motion.in_set(GameSet::Spawning),
                 enemy_anim::discover_leg_bones.in_set(GameSet::Spawning),
                 enemy_anim::strip_enemy_clip_root_motion.in_set(GameSet::Spawning),
                 enemy_anim::animate_cavalry_knight.in_set(GameSet::Movement),
+                enemy_anim::rock_single_clip_enemies.in_set(GameSet::Visual),
                 wave::apply_enemy_model_rotation.in_set(GameSet::Spawning),
+                combat::fix_blend_enemy_materials.in_set(GameSet::Spawning),
             ),
         );
         // Hero systems (separate call due to Bevy tuple size limit)
@@ -210,14 +214,19 @@ impl Plugin for GamePlugin {
             (
                 combat::hide_ground_meshes.in_set(GameSet::Cleanup),
                 tower_spec::apply_specialization.in_set(GameSet::Combat),
+                tower_spec::apply_spec_upgrade.in_set(GameSet::Combat),
                 tower_spec::tick_tower_auras.in_set(GameSet::Combat),
                 tower_spec::tick_burn_zones.in_set(GameSet::Combat),
+                player_ability::tick_player_ability_cooldowns.in_set(GameSet::Combat),
+                player_ability::execute_player_ability.in_set(GameSet::Combat),
+                player_ability::tick_reinforcements.in_set(GameSet::Combat),
                 combat::init_damage_tracking.in_set(GameSet::Spawning),
                 combat::spawn_damage_numbers.in_set(GameSet::Visual),
                 combat::tick_damage_numbers.in_set(GameSet::Visual),
                 combat::animate_damage_numbers.in_set(GameSet::Visual),
                 animate_placement_bounce.in_set(GameSet::Visual),
                 animate_upgrade_flash.in_set(GameSet::Visual),
+                setup::animate_lava.in_set(GameSet::Visual),
             ),
         );
         app.add_systems(
@@ -236,6 +245,13 @@ impl Plugin for GamePlugin {
                 apply_game_speed,
             )
                 .run_if(in_state(AppState::Playing)),
+        );
+
+        // Music volume sync runs in both Playing and Paused so slider changes take effect immediately
+        app.add_systems(
+            Update,
+            audio::sync_music_volume
+                .run_if(in_state(AppState::Playing).or(in_state(AppState::Paused))),
         );
 
         // Root motion cancellation — run AFTER animate_targets applies bone transforms

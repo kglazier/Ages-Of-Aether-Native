@@ -53,6 +53,7 @@ pub fn main() {
         .init_resource::<resources::AdminUnlocks>()
         .init_resource::<resources::CurrentLevel>()
         .init_resource::<resources::LevelPath>()
+        .init_resource::<resources::VolumeSettings>()
         .init_resource::<states::GameOutcome>()
         .add_systems(Startup, save::load_save_on_startup)
         .add_systems(OnEnter(states::AppState::GameOver), save::save_on_level_complete)
@@ -61,6 +62,9 @@ pub fn main() {
         .init_resource::<systems::debug::DebugState>()
         .init_resource::<systems::hero_ability::AbilityActivated>()
         .init_resource::<systems::tower_spec::SpecializationChosen>()
+        .init_resource::<systems::tower_spec::SpecUpgradeRequested>()
+        .init_resource::<resources::PlayerAbilities>()
+        .init_resource::<resources::PlayerAbilityTargeting>()
         .add_plugins(systems::GamePlugin)
         .add_plugins(ui::UiPlugin)
         .run();

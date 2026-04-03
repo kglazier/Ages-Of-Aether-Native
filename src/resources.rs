@@ -104,6 +104,36 @@ impl Default for ActiveHeroType {
     }
 }
 
+/// Volume settings for music and sound effects (0.0–1.0).
+#[derive(Resource)]
+pub struct VolumeSettings {
+    pub music: f32,
+    pub sfx: f32,
+}
+
+impl Default for VolumeSettings {
+    fn default() -> Self {
+        Self { music: 0.5, sfx: 0.5 }
+    }
+}
+
+/// Global player ability cooldowns (Meteor & Reinforcements).
+#[derive(Resource)]
+pub struct PlayerAbilities {
+    pub meteor_cooldown: f32,
+    pub reinforcement_cooldown: f32,
+}
+
+impl Default for PlayerAbilities {
+    fn default() -> Self {
+        Self { meteor_cooldown: 0.0, reinforcement_cooldown: 0.0 }
+    }
+}
+
+/// When set, the next ground tap should target this ability instead of moving the hero.
+#[derive(Resource, Default)]
+pub struct PlayerAbilityTargeting(pub Option<crate::data::PlayerAbilityType>);
+
 /// Admin/debug unlock flags (runtime only, not persisted).
 #[derive(Resource, Default)]
 pub struct AdminUnlocks {

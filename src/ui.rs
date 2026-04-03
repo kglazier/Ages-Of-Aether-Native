@@ -41,6 +41,9 @@ impl Plugin for UiPlugin {
                 handle_ability_buttons,
                 update_ability_cooldowns,
                 handle_spec_buttons,
+                handle_spec_upgrade_buttons,
+                handle_player_ability_buttons,
+                update_player_ability_cooldowns,
             ).run_if(in_state(AppState::Playing)),
         );
 
@@ -60,7 +63,13 @@ impl Plugin for UiPlugin {
         app.add_systems(OnEnter(AppState::Paused), setup_pause_screen);
         app.add_systems(
             Update,
-            (handle_pause_buttons, handle_confirm_dialog).run_if(in_state(AppState::Paused)),
+            handle_pause_buttons.run_if(in_state(AppState::Paused)),
+        );
+        app.add_systems(Update,
+            handle_confirm_dialog.run_if(in_state(AppState::Paused)),
+        );
+        app.add_systems(Update,
+            handle_volume_sliders.run_if(in_state(AppState::Paused)),
         );
         app.add_systems(OnExit(AppState::Paused), cleanup_pause_screen);
 
@@ -97,13 +106,16 @@ impl Plugin for UiPlugin {
 
         // Logbook
         app.init_resource::<crate::systems::logbook_preview::LogbookPreviews>();
+        app.init_resource::<LogbookScrollOffset>();
         app.add_systems(OnEnter(AppState::Logbook), (
             setup_logbook,
             crate::systems::logbook_preview::setup_logbook_previews,
         ));
         app.add_systems(Update, (
             handle_logbook,
+            logbook_scroll,
             crate::systems::logbook_preview::apply_preview_tints,
+            crate::systems::logbook_preview::start_preview_anims,
         ).run_if(in_state(AppState::Logbook)));
         app.add_systems(OnExit(AppState::Logbook), (
             cleanup_menu_screen,
@@ -149,6 +161,10 @@ struct SpecButton {
 #[derive(Component)]
 struct RallyPointButton;
 #[derive(Component)]
+struct SpecUpgradeButton {
+    cost: u32,
+}
+#[derive(Component)]
 struct TowerInfoText;
 #[derive(Component)]
 struct RallyPointPrompt;
@@ -168,6 +184,12 @@ struct SpeedButtonText;
 struct PauseButton;
 #[derive(Component)]
 struct PauseScreenRoot;
+#[derive(Component)]
+struct VolumeSliderFill { is_music: bool }
+#[derive(Component)]
+struct VolumeSliderBg { is_music: bool }
+#[derive(Component)]
+struct VolumeLabel { is_music: bool }
 #[derive(Component)]
 struct ResumeButton;
 #[derive(Component)]
@@ -214,6 +236,12 @@ enum MenuAction {
 #[derive(Component)]
 struct LogbookPageRoot;
 #[derive(Component)]
+struct LogbookPageContainer;
+#[derive(Component)]
+struct LogbookScrollContent;
+#[derive(Resource, Default)]
+struct LogbookScrollOffset(f32);
+#[derive(Component)]
 struct HeroPreviewRoot;
 #[derive(Component)]
 struct HeroPreviewModel;
@@ -223,6 +251,10 @@ struct AdminPanelRoot;
 struct AdminUnlockLevelsButton;
 #[derive(Component)]
 struct AdminUnlockHeroesButton;
+#[derive(Component)]
+struct PlayerAbilityButton(crate::data::PlayerAbilityType);
+#[derive(Component)]
+struct PlayerAbilityCooldownText(crate::data::PlayerAbilityType);
 
 // ---------------------------------------------------------------------------
 // HUD setup & update
@@ -377,6 +409,64 @@ fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>) {
                         TextColor(Color::srgb(0.0, 1.0, 0.0)),
                     ));
                 });
+            // Meteor button
+            parent
+                .spawn((
+                    Button,
+                    PlayerAbilityButton(crate::data::PlayerAbilityType::Meteor),
+                    Node {
+                        height: Val::Px(44.0),
+                        padding: UiRect::horizontal(Val::Px(10.0)),
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.5, 0.2, 0.1, 0.9)),
+                    BorderRadius::all(Val::Px(6.0)),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Text::new("Meteor"),
+                        TextFont { font_size: 16.0, ..default() },
+                        TextColor(Color::srgb(1.0, 0.6, 0.2)),
+                    ));
+                    btn.spawn((
+                        Text::new(""),
+                        TextFont { font_size: 12.0, ..default() },
+                        TextColor(Color::srgb(0.8, 0.8, 0.8)),
+                        PlayerAbilityCooldownText(crate::data::PlayerAbilityType::Meteor),
+                    ));
+                });
+            // Reinforcements button
+            parent
+                .spawn((
+                    Button,
+                    PlayerAbilityButton(crate::data::PlayerAbilityType::Reinforcements),
+                    Node {
+                        height: Val::Px(44.0),
+                        padding: UiRect::horizontal(Val::Px(10.0)),
+                        flex_direction: FlexDirection::Column,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.1, 0.35, 0.1, 0.9)),
+                    BorderRadius::all(Val::Px(6.0)),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Text::new("Reinforce"),
+                        TextFont { font_size: 16.0, ..default() },
+                        TextColor(Color::srgb(0.4, 0.9, 0.4)),
+                    ));
+                    btn.spawn((
+                        Text::new(""),
+                        TextFont { font_size: 12.0, ..default() },
+                        TextColor(Color::srgb(0.8, 0.8, 0.8)),
+                        PlayerAbilityCooldownText(crate::data::PlayerAbilityType::Reinforcements),
+                    ));
+                });
         });
 }
 
@@ -467,7 +557,7 @@ fn manage_panels(
     build_menus: Query<Entity, With<BuildMenuRoot>>,
     tower_panels: Query<Entity, With<TowerPanelRoot>>,
     prompts: Query<Entity, With<RallyPointPrompt>>,
-    towers: Query<(&Element, &TowerLevel, &TowerInvestment, &AttackDamage, &AttackRange, &Transform, Option<&TowerSpec>)>,
+    towers: Query<(&Element, &TowerLevel, &TowerInvestment, &AttackDamage, &AttackRange, &Transform, Option<&TowerSpec>, Option<&SpecLevel>)>,
     spots: Query<&Transform, With<BuildSpot>>,
     camera_query: Query<(&Camera, &GlobalTransform)>,
     windows: Query<&Window>,
@@ -505,7 +595,7 @@ fn manage_panels(
             }
         }
         Selection::Tower(tower_entity) => {
-            if let Ok((element, level, investment, damage, range, tower_transform, spec)) =
+            if let Ok((element, level, investment, damage, range, tower_transform, spec, slevel)) =
                 towers.get(tower_entity)
             {
                 let screen_pos = world_to_screen(camera, cam_transform, tower_transform.translation, window_width, window_height);
@@ -519,6 +609,7 @@ fn manage_panels(
                     &game,
                     screen_pos,
                     spec.map(|s| s.0),
+                    slevel.map(|s| s.0).unwrap_or(0),
                 );
             }
         }
@@ -633,6 +724,7 @@ fn spawn_tower_panel(
     game: &GameData,
     screen_pos: (f32, f32),
     spec: Option<crate::data::TowerSpecialization>,
+    spec_level: u8,
 ) {
     let stats = tower_stats(element, level);
     let has_spec = spec.is_some();
@@ -762,11 +854,61 @@ fn spawn_tower_panel(
                         });
                 }
             } else {
-                parent.spawn((
-                    Text::new("SPECIALIZED"),
-                    TextFont { font_size: 16.0, ..default() },
-                    TextColor(Color::srgb(1.0, 0.85, 0.0)),
-                ));
+                // Show spec level and upgrade option if available
+                let spec_val = spec.unwrap();
+                if let Some(upgrade) = crate::data::spec_upgrade_info(spec_val, spec_level + 1) {
+                    let spec_name = {
+                        let specs = crate::data::element_specializations(element);
+                        specs.iter()
+                            .find(|(st, _)| *st == spec_val)
+                            .map(|(_, d)| d.name)
+                            .unwrap_or("Spec")
+                    };
+                    parent.spawn((
+                        Text::new(format!("{} Lv {}", spec_name, spec_level)),
+                        TextFont { font_size: 14.0, ..default() },
+                        TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                    ));
+                    let affordable = game.gold >= upgrade.cost;
+                    parent
+                        .spawn((
+                            Button,
+                            SpecUpgradeButton { cost: upgrade.cost },
+                            Node {
+                                width: Val::Px(200.0),
+                                min_height: Val::Px(40.0),
+                                flex_direction: FlexDirection::Column,
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
+                                ..default()
+                            },
+                            BackgroundColor(if affordable {
+                                Color::srgba(0.3, 0.2, 0.4, 0.9)
+                            } else {
+                                Color::srgba(0.15, 0.15, 0.15, 0.5)
+                            }),
+                            BorderRadius::all(Val::Px(6.0)),
+                        ))
+                        .with_children(|btn| {
+                            btn.spawn((
+                                Text::new(format!("Upgrade ({}g)", upgrade.cost)),
+                                TextFont { font_size: 14.0, ..default() },
+                                TextColor(if affordable { Color::WHITE } else { Color::srgb(0.4, 0.4, 0.4) }),
+                            ));
+                            btn.spawn((
+                                Text::new(upgrade.description),
+                                TextFont { font_size: 11.0, ..default() },
+                                TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                            ));
+                        });
+                } else {
+                    parent.spawn((
+                        Text::new("MAX LEVEL"),
+                        TextFont { font_size: 16.0, ..default() },
+                        TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                    ));
+                }
             }
 
             // Sell button
@@ -833,6 +975,7 @@ fn handle_build_buttons(
     asset_server: Res<AssetServer>,
     audio_assets: Option<Res<crate::systems::audio::AudioAssets>>,
     save_data: Option<Res<crate::save::SaveData>>,
+    vol_settings: Res<VolumeSettings>,
 ) {
     for (interaction, build_btn) in &interactions {
         if *interaction != Interaction::Pressed {
@@ -897,7 +1040,10 @@ fn handle_build_buttons(
             if audio.all_loaded {
                 commands.spawn((
                     AudioPlayer(audio.tower_build.clone()),
-                    PlaybackSettings::DESPAWN,
+                    PlaybackSettings {
+                        volume: bevy::audio::Volume::new(vol_settings.sfx),
+                        ..PlaybackSettings::DESPAWN
+                    },
                 ));
             }
         }
@@ -927,6 +1073,7 @@ fn handle_tower_buttons(
     mut spots: Query<&mut BuildSpot>,
     audio_assets: Option<Res<crate::systems::audio::AudioAssets>>,
     save_data: Option<Res<crate::save::SaveData>>,
+    vol_settings: Res<VolumeSettings>,
 ) {
     let Selection::Tower(tower_entity) = *selection else {
         return;
@@ -965,7 +1112,10 @@ fn handle_tower_buttons(
             if audio.all_loaded {
                 commands.spawn((
                     AudioPlayer(audio.tower_upgrade.clone()),
-                    PlaybackSettings::DESPAWN,
+                    PlaybackSettings {
+                        volume: bevy::audio::Volume::new(vol_settings.sfx),
+                        ..PlaybackSettings::DESPAWN
+                    },
                 ));
             }
         }
@@ -997,7 +1147,10 @@ fn handle_tower_buttons(
                 if audio.all_loaded {
                     commands.spawn((
                         AudioPlayer(audio.tower_sell.clone()),
-                        PlaybackSettings::DESPAWN,
+                        PlaybackSettings {
+                            volume: bevy::audio::Volume::new(vol_settings.sfx),
+                            ..PlaybackSettings::DESPAWN
+                        },
                     ));
                 }
             }
@@ -1011,7 +1164,8 @@ fn handle_tower_buttons(
 fn update_button_affordability(
     game: Res<GameData>,
     mut upgrade_q: Query<(&UpgradeButton, &mut BackgroundColor, &Children)>,
-    mut spec_q: Query<(&SpecButton, &mut BackgroundColor, &Children), Without<UpgradeButton>>,
+    mut spec_q: Query<(&SpecButton, &mut BackgroundColor, &Children), (Without<UpgradeButton>, Without<SpecUpgradeButton>)>,
+    mut spec_up_q: Query<(&SpecUpgradeButton, &mut BackgroundColor, &Children), (Without<UpgradeButton>, Without<SpecButton>)>,
     mut text_colors: Query<&mut TextColor>,
 ) {
     if !game.is_changed() {
@@ -1042,6 +1196,21 @@ fn update_button_affordability(
         for child in children.iter() {
             if let Ok(mut tc) = text_colors.get_mut(*child) {
                 // Only update the first child (name+cost text), not description
+                tc.0 = if affordable { Color::WHITE } else { Color::srgb(0.4, 0.4, 0.4) };
+                break;
+            }
+        }
+    }
+
+    for (btn, mut bg, children) in &mut spec_up_q {
+        let affordable = game.gold >= btn.cost;
+        bg.0 = if affordable {
+            Color::srgba(0.3, 0.2, 0.4, 0.9)
+        } else {
+            Color::srgba(0.15, 0.15, 0.15, 0.5)
+        };
+        for child in children.iter() {
+            if let Ok(mut tc) = text_colors.get_mut(*child) {
                 tc.0 = if affordable { Color::WHITE } else { Color::srgb(0.4, 0.4, 0.4) };
                 break;
             }
@@ -1268,7 +1437,7 @@ fn update_auto_wave_button(
     }
 }
 
-fn setup_pause_screen(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
+fn setup_pause_screen(mut commands: Commands, mut time: ResMut<Time<Virtual>>, vol_settings: Res<VolumeSettings>) {
     time.pause();
     commands
         .spawn((
@@ -1291,6 +1460,10 @@ fn setup_pause_screen(mut commands: Commands, mut time: ResMut<Time<Virtual>>) {
                 TextFont { font_size: 56.0, ..default() },
                 TextColor(Color::WHITE),
             ));
+
+            // Volume sliders
+            spawn_volume_slider(parent, "Music", true, vol_settings.music);
+            spawn_volume_slider(parent, "SFX", false, vol_settings.sfx);
 
             // Resume button
             parent
@@ -1411,6 +1584,110 @@ fn cleanup_pause_screen(
     }
 }
 
+fn spawn_volume_slider(parent: &mut ChildBuilder, label: &str, is_music: bool, value: f32) {
+    parent
+        .spawn(Node {
+            flex_direction: FlexDirection::Row,
+            align_items: AlignItems::Center,
+            column_gap: Val::Px(12.0),
+            ..default()
+        })
+        .with_children(|row| {
+            // Label + value
+            row.spawn((
+                Text::new(format!("{}: {}%", label, (value * 100.0) as u32)),
+                TextFont { font_size: 20.0, ..default() },
+                TextColor(Color::WHITE),
+                VolumeLabel { is_music },
+                Node { width: Val::Px(110.0), ..default() },
+            ));
+
+            // Slider track (clickable background)
+            row.spawn((
+                Button,
+                VolumeSliderBg { is_music },
+                Node {
+                    width: Val::Px(200.0),
+                    height: Val::Px(20.0),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.3, 0.3, 0.3, 0.9)),
+                BorderRadius::all(Val::Px(4.0)),
+            ))
+            .with_children(|track| {
+                // Fill bar
+                track.spawn((
+                    Node {
+                        width: Val::Percent(value * 100.0),
+                        height: Val::Percent(100.0),
+                        ..default()
+                    },
+                    BackgroundColor(if is_music {
+                        Color::srgba(0.3, 0.6, 0.9, 0.9)
+                    } else {
+                        Color::srgba(0.9, 0.6, 0.2, 0.9)
+                    }),
+                    BorderRadius::all(Val::Px(4.0)),
+                    VolumeSliderFill { is_music },
+                ));
+            });
+        });
+}
+
+/// Handles clicks on volume slider backgrounds to adjust volume.
+/// Handles drag on volume slider backgrounds to adjust volume.
+/// Runs every frame (no Changed filter) so dragging works smoothly.
+fn handle_volume_sliders(
+    slider_bg_q: Query<(&Interaction, &VolumeSliderBg, &ComputedNode, &GlobalTransform)>,
+    mut vol_settings: ResMut<VolumeSettings>,
+    mut fill_q: Query<(&VolumeSliderFill, &mut Node), Without<VolumeSliderBg>>,
+    mut label_q: Query<(&VolumeLabel, &mut Text)>,
+    windows: Query<&Window>,
+    touches: Res<Touches>,
+) {
+    let Ok(window) = windows.get_single() else { return };
+    // Use cursor position (desktop) or first touch position (mobile)
+    let cursor = if let Some(pos) = window.cursor_position() {
+        pos
+    } else if let Some(touch) = touches.iter().next() {
+        touch.position()
+    } else {
+        return;
+    };
+
+    for (interaction, slider, computed, global_tf) in &slider_bg_q {
+        if *interaction != Interaction::Pressed { continue; }
+
+        // GlobalTransform gives the center; compute left edge from actual rendered width
+        let slider_width = computed.size().x;
+        if slider_width < 1.0 { continue; }
+        let slider_left = global_tf.translation().x - slider_width / 2.0;
+        let relative_x = (cursor.x - slider_left).clamp(0.0, slider_width);
+        let new_val = (relative_x / slider_width).clamp(0.0, 1.0);
+
+        if slider.is_music {
+            vol_settings.music = new_val;
+        } else {
+            vol_settings.sfx = new_val;
+        }
+
+        // Update fill bar
+        for (fill, mut fill_node) in &mut fill_q {
+            if fill.is_music == slider.is_music {
+                fill_node.width = Val::Percent(new_val * 100.0);
+            }
+        }
+
+        // Update label
+        let label_text = if slider.is_music { "Music" } else { "SFX" };
+        for (label, mut text) in &mut label_q {
+            if label.is_music == slider.is_music {
+                text.0 = format!("{}: {}%", label_text, (new_val * 100.0) as u32);
+            }
+        }
+    }
+}
+
 fn spawn_confirm_dialog(commands: &mut Commands, message: &str) {
     commands
         .spawn((
@@ -1515,6 +1792,7 @@ fn handle_confirm_dialog(
     game_entities: Query<Entity, With<crate::components::GameWorldEntity>>,
     hud_q: Query<Entity, With<HudRoot>>,
     hero_hud_q: Query<Entity, With<HeroHudRoot>>,
+    mut debug_state: Option<ResMut<crate::systems::debug::DebugState>>,
 ) {
     for interaction in &yes_q {
         if *interaction == Interaction::Pressed {
@@ -1544,6 +1822,10 @@ fn handle_confirm_dialog(
                     }
                     for entity in &hero_hud_q {
                         commands.entity(entity).despawn_recursive();
+                    }
+                    // Close debug overlay if open
+                    if let Some(ref mut ds) = debug_state {
+                        ds.show_overlay = false;
                     }
                     next_state.set(AppState::LevelSelect);
                 }
@@ -1893,11 +2175,10 @@ fn setup_hero_hud(
                             BorderRadius::all(Val::Px(4.0)),
                         ))
                         .with_children(|btn| {
-                            // Ability name (truncated)
-                            let short_name: String = def.name.chars().take(6).collect();
+                            // Ability name
                             btn.spawn((
-                                Text::new(short_name),
-                                TextFont { font_size: 10.0, ..default() },
+                                Text::new(def.name),
+                                TextFont { font_size: 8.0, ..default() },
                                 TextColor(Color::srgb(r, g, b)),
                             ));
                             // Cooldown text (hidden when ready)
@@ -1984,6 +2265,76 @@ fn handle_spec_buttons(
         if *interaction == Interaction::Pressed {
             spec_res.0 = Some(btn.spec);
         }
+    }
+}
+
+fn handle_spec_upgrade_buttons(
+    interactions: Query<(&Interaction, &SpecUpgradeButton), Changed<Interaction>>,
+    mut upgrade_res: ResMut<crate::systems::tower_spec::SpecUpgradeRequested>,
+) {
+    for (interaction, _btn) in &interactions {
+        if *interaction == Interaction::Pressed {
+            upgrade_res.0 = true;
+        }
+    }
+}
+
+fn handle_player_ability_buttons(
+    interactions: Query<(&Interaction, &PlayerAbilityButton), Changed<Interaction>>,
+    mut targeting: ResMut<PlayerAbilityTargeting>,
+    abilities: Res<PlayerAbilities>,
+) {
+    for (interaction, btn) in &interactions {
+        if *interaction != Interaction::Pressed { continue; }
+        let cd = match btn.0 {
+            crate::data::PlayerAbilityType::Meteor => abilities.meteor_cooldown,
+            crate::data::PlayerAbilityType::Reinforcements => abilities.reinforcement_cooldown,
+        };
+        if cd <= 0.0 {
+            targeting.0 = Some(btn.0);
+        }
+    }
+}
+
+fn update_player_ability_cooldowns(
+    abilities: Res<PlayerAbilities>,
+    targeting: Res<PlayerAbilityTargeting>,
+    mut btn_q: Query<(&PlayerAbilityButton, &mut BackgroundColor)>,
+    mut text_q: Query<(&PlayerAbilityCooldownText, &mut Text)>,
+) {
+    for (btn, mut bg) in &mut btn_q {
+        let (cd, base_color, active_color) = match btn.0 {
+            crate::data::PlayerAbilityType::Meteor => (
+                abilities.meteor_cooldown,
+                Color::srgba(0.5, 0.2, 0.1, 0.9),
+                Color::srgba(0.8, 0.4, 0.1, 1.0),
+            ),
+            crate::data::PlayerAbilityType::Reinforcements => (
+                abilities.reinforcement_cooldown,
+                Color::srgba(0.1, 0.35, 0.1, 0.9),
+                Color::srgba(0.2, 0.6, 0.2, 1.0),
+            ),
+        };
+        let is_targeting = targeting.0 == Some(btn.0);
+        bg.0 = if is_targeting {
+            active_color
+        } else if cd > 0.0 {
+            Color::srgba(0.15, 0.15, 0.15, 0.5)
+        } else {
+            base_color
+        };
+    }
+
+    for (txt, mut text) in &mut text_q {
+        let cd = match txt.0 {
+            crate::data::PlayerAbilityType::Meteor => abilities.meteor_cooldown,
+            crate::data::PlayerAbilityType::Reinforcements => abilities.reinforcement_cooldown,
+        };
+        text.0 = if cd > 0.0 {
+            format!("{:.0}s", cd.ceil())
+        } else {
+            String::new()
+        };
     }
 }
 
@@ -2912,10 +3263,11 @@ fn build_upgrade_shop_screen(commands: &mut Commands, save: &crate::save::SaveDa
 
             root.spawn(Node {
                 flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(14.0),
-                row_gap: Val::Px(14.0),
+                column_gap: Val::Px(8.0),
+                row_gap: Val::Px(8.0),
                 flex_wrap: FlexWrap::Wrap,
                 justify_content: JustifyContent::Center,
+                max_width: Val::Percent(100.0),
                 ..default()
             }).with_children(|row| {
                 for &kind in &crate::data::ALL_UPGRADES {
@@ -2934,11 +3286,11 @@ fn build_upgrade_shop_screen(commands: &mut Commands, save: &crate::save::SaveDa
                         Button,
                         MenuButton(MenuAction::BuyUpgrade(kind)),
                         Node {
-                            width: Val::Px(200.0),
-                            min_height: Val::Px(160.0),
+                            width: Val::Px(150.0),
+                            min_height: Val::Px(130.0),
                             flex_direction: FlexDirection::Column,
-                            padding: UiRect::all(Val::Px(12.0)),
-                            row_gap: Val::Px(4.0),
+                            padding: UiRect::all(Val::Px(8.0)),
+                            row_gap: Val::Px(2.0),
                             ..default()
                         },
                         BackgroundColor(if affordable {
@@ -2953,24 +3305,29 @@ fn build_upgrade_shop_screen(commands: &mut Commands, save: &crate::save::SaveDa
                     .with_children(|card| {
                         card.spawn((
                             Text::new(def.name),
-                            TextFont { font_size: 18.0, ..default() },
+                            TextFont { font_size: 14.0, ..default() },
                             TextColor(Color::WHITE),
                         ));
                         card.spawn((
                             Text::new(def.description),
-                            TextFont { font_size: 12.0, ..default() },
+                            TextFont { font_size: 10.0, ..default() },
                             TextColor(Color::srgb(0.7, 0.7, 0.7)),
                         ));
                         card.spawn((
                             Text::new(def.per_level),
-                            TextFont { font_size: 12.0, ..default() },
+                            TextFont { font_size: 10.0, ..default() },
                             TextColor(Color::srgb(0.5, 0.8, 1.0)),
                         ));
-                        let filled: String = (0..current_level).map(|_| '\u{25CF}').collect();
-                        let empty: String = (0..(crate::data::UPGRADE_MAX_LEVEL - current_level)).map(|_| '\u{25CB}').collect();
+                        // Level pips: use simple ASCII characters that render on all platforms
+                        let filled: String = (0..current_level).map(|_| '[').collect::<String>()
+                            + &(0..current_level).map(|_| ']').collect::<String>();
+                        let pips = format!(
+                            "{}/{}",
+                            current_level, crate::data::UPGRADE_MAX_LEVEL
+                        );
                         card.spawn((
-                            Text::new(format!("{}{}", filled, empty)),
-                            TextFont { font_size: 18.0, ..default() },
+                            Text::new(pips),
+                            TextFont { font_size: 12.0, ..default() },
                             TextColor(Color::srgb(0.5, 0.8, 1.0)),
                         ));
                         if maxed {
@@ -3020,7 +3377,7 @@ fn setup_logbook(
     // Set ambient light for preview rendering
     commands.insert_resource(AmbientLight {
         color: Color::WHITE,
-        brightness: 500.0,
+        brightness: 2000.0,
         ..default()
     });
 
@@ -3060,10 +3417,21 @@ fn setup_logbook(
                 spawn_menu_button(row, "Towers", MenuAction::LogbookTowers, 140.0, Color::srgba(0.1, 0.1, 0.25, 0.9), Color::srgb(0.7, 0.7, 1.0));
             });
 
-            // Default: show enemies page
-            spawn_logbook_enemies(root, &previews);
+            // Persistent container for page content (so Back stays at bottom)
+            root.spawn((
+                LogbookPageContainer,
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Column,
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+            )).with_children(|container| {
+                spawn_logbook_enemies(container, &previews);
+            });
 
-            // Back button
+            // Back button (always last)
             spawn_menu_button(
                 root, "Back",
                 MenuAction::BackToMenu,
@@ -3078,82 +3446,116 @@ fn spawn_logbook_enemies(parent: &mut ChildBuilder, previews: &crate::systems::l
     parent.spawn((
         LogbookPageRoot,
         Node {
-            flex_direction: FlexDirection::Column,
             width: Val::Percent(100.0),
-            max_width: Val::Px(920.0),
-            flex_grow: 1.0,
-            overflow: Overflow::scroll_y(),
+            max_height: Val::Vh(70.0),
+            overflow: Overflow::clip(),
             ..default()
         },
     ))
-    .with_children(|scroll| {
-        scroll.spawn((
+    .with_children(|clip| {
+        clip.spawn((
+            LogbookScrollContent,
             Node {
+                width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Row,
                 flex_wrap: FlexWrap::Wrap,
                 column_gap: Val::Px(10.0),
                 row_gap: Val::Px(10.0),
                 justify_content: JustifyContent::Center,
-                padding: UiRect::vertical(Val::Px(8.0)),
+                align_items: AlignItems::FlexStart,
+                position_type: PositionType::Relative,
                 ..default()
             },
         ))
         .with_children(|grid| {
-            for enemy_type in &crate::data::ALL_ENEMY_TYPES {
-                let info = crate::data::enemy_info(*enemy_type);
-                let stats = crate::data::enemy_stats(*enemy_type);
+        let eras: &[(&str, &[EnemyType])] = &[
+            ("Primordial", &[EnemyType::Amoeba, EnemyType::Jellyfish, EnemyType::Sporebloom,
+                EnemyType::Trilobite, EnemyType::SeaScorpion, EnemyType::Nautilus, EnemyType::GiantWorm]),
+            ("Prehistoric", &[EnemyType::Raptor, EnemyType::Stegosaurus, EnemyType::Parasaur,
+                EnemyType::Triceratops, EnemyType::Pterodactyl, EnemyType::CompyHealer, EnemyType::TRex]),
+            ("Stone Age", &[EnemyType::Caveman, EnemyType::Sabertooth, EnemyType::Mammoth,
+                EnemyType::Shaman, EnemyType::GiantEagle, EnemyType::Dodo, EnemyType::WoollyRhino]),
+            ("Ancient", &[EnemyType::Legionary, EnemyType::Lion, EnemyType::WarElephant,
+                EnemyType::EagleScout, EnemyType::Medicus, EnemyType::Minotaur]),
+            ("Medieval", &[EnemyType::Footman, EnemyType::Cavalry, EnemyType::Knight,
+                EnemyType::Wyvern, EnemyType::Priest, EnemyType::Dragon]),
+        ];
+        for (era_name, enemies) in eras {
+            // Era header — full-width bar to force a new row
+            grid.spawn((
+                Node {
+                    width: Val::Percent(100.0),
+                    flex_basis: Val::Percent(100.0),
+                    padding: UiRect::axes(Val::Px(12.0), Val::Px(6.0)),
+                    margin: UiRect::new(Val::Px(0.0), Val::Px(0.0), Val::Px(12.0), Val::Px(2.0)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.2, 0.15, 0.05, 0.8)),
+                BorderRadius::all(Val::Px(4.0)),
+            )).with_children(|header| {
+                header.spawn((
+                    Text::new(format!("— {} —", era_name)),
+                    TextFont { font_size: 20.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.85, 0.3)),
+                ));
+            });
+        for enemy_type in *enemies {
+            let info = crate::data::enemy_info(*enemy_type);
+            let stats = crate::data::enemy_stats(*enemy_type);
 
-                grid.spawn((
-                    Node {
-                        width: Val::Px(200.0),
-                        min_height: Val::Px(90.0),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        padding: UiRect::all(Val::Px(8.0)),
-                        row_gap: Val::Px(3.0),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.12, 0.08, 0.18, 0.9)),
-                    BorderRadius::all(Val::Px(8.0)),
-                ))
-                .with_children(|card| {
-                    // Model preview image
-                    if let Some(img) = previews.enemy_images.get(info.name) {
-                        card.spawn((
-                            ImageNode::new(img.clone()),
-                            Node {
-                                width: Val::Px(80.0),
-                                height: Val::Px(80.0),
-                                margin: UiRect::bottom(Val::Px(4.0)),
-                                ..default()
-                            },
-                            BorderRadius::all(Val::Px(6.0)),
-                        ));
-                    }
+            grid.spawn((
+                Node {
+                    width: Val::Px(200.0),
+                    min_height: Val::Px(90.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::all(Val::Px(8.0)),
+                    row_gap: Val::Px(3.0),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.12, 0.08, 0.18, 0.9)),
+                BorderRadius::all(Val::Px(8.0)),
+            ))
+            .with_children(|card| {
+                // Model preview image
+                if let Some(img) = previews.enemy_images.get(info.name) {
                     card.spawn((
-                        Text::new(info.name),
-                        TextFont { font_size: 17.0, ..default() },
-                        TextColor(Color::WHITE),
+                        ImageNode::new(img.clone()),
+                        Node {
+                            width: Val::Px(80.0),
+                            height: Val::Px(80.0),
+                            margin: UiRect::bottom(Val::Px(4.0)),
+                            ..default()
+                        },
+                        BorderRadius::all(Val::Px(6.0)),
                     ));
-                    card.spawn((
-                        Text::new(info.traits),
-                        TextFont { font_size: 12.0, ..default() },
-                        TextColor(Color::srgb(1.0, 0.7, 0.3)),
-                    ));
-                    card.spawn((
-                        Text::new(info.description),
-                        TextFont { font_size: 11.0, ..default() },
-                        TextColor(Color::srgb(0.6, 0.6, 0.6)),
-                        Node { align_self: AlignSelf::FlexStart, ..default() },
-                    ));
-                    card.spawn((
-                        Text::new(format!("HP: {:.0}  SPD: {:.1}  ARM: {:.0}", stats.hp, stats.speed, stats.armor)),
-                        TextFont { font_size: 10.0, ..default() },
-                        TextColor(Color::srgb(0.5, 0.7, 0.5)),
-                        Node { align_self: AlignSelf::FlexStart, ..default() },
-                    ));
-                });
-            }
+                }
+                card.spawn((
+                    Text::new(info.name),
+                    TextFont { font_size: 17.0, ..default() },
+                    TextColor(Color::WHITE),
+                ));
+                card.spawn((
+                    Text::new(info.traits),
+                    TextFont { font_size: 12.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.7, 0.3)),
+                ));
+                card.spawn((
+                    Text::new(info.description),
+                    TextFont { font_size: 11.0, ..default() },
+                    TextColor(Color::srgb(0.6, 0.6, 0.6)),
+                    Node { align_self: AlignSelf::FlexStart, ..default() },
+                ));
+                card.spawn((
+                    Text::new(format!("HP: {:.0}  SPD: {:.1}  ARM: {:.0}", stats.hp, stats.speed, stats.armor)),
+                    TextFont { font_size: 10.0, ..default() },
+                    TextColor(Color::srgb(0.5, 0.7, 0.5)),
+                    Node { align_self: AlignSelf::FlexStart, ..default() },
+                ));
+            });
+        }
+        } // end era loop
+
         });
     });
 }
@@ -3162,82 +3564,83 @@ fn spawn_logbook_towers(parent: &mut ChildBuilder, previews: &crate::systems::lo
     parent.spawn((
         LogbookPageRoot,
         Node {
-            flex_direction: FlexDirection::Column,
             width: Val::Percent(100.0),
-            max_width: Val::Px(920.0),
-            flex_grow: 1.0,
-            overflow: Overflow::scroll_y(),
+            max_height: Val::Vh(70.0),
+            overflow: Overflow::clip(),
             ..default()
         },
     ))
-    .with_children(|scroll| {
-        scroll.spawn((
+    .with_children(|clip| {
+        clip.spawn((
+            LogbookScrollContent,
             Node {
+                width: Val::Percent(100.0),
                 flex_direction: FlexDirection::Row,
                 flex_wrap: FlexWrap::Wrap,
                 column_gap: Val::Px(10.0),
                 row_gap: Val::Px(10.0),
                 justify_content: JustifyContent::Center,
-                padding: UiRect::vertical(Val::Px(8.0)),
+                align_items: AlignItems::FlexStart,
+                position_type: PositionType::Relative,
                 ..default()
             },
         ))
         .with_children(|grid| {
-            let elements = [Element::Lightning, Element::Earth, Element::Ice, Element::Fire];
-            for element in &elements {
-                let base = tower_stats(*element, 0);
-                let color = element_color(*element);
+        let elements = [Element::Lightning, Element::Earth, Element::Ice, Element::Fire];
+        for element in &elements {
+            let base = tower_stats(*element, 0);
+            let color = element_color(*element);
 
-                grid.spawn((
-                    Node {
-                        width: Val::Px(200.0),
-                        min_height: Val::Px(100.0),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        padding: UiRect::all(Val::Px(8.0)),
-                        row_gap: Val::Px(3.0),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgba(0.12, 0.08, 0.18, 0.9)),
-                    BorderRadius::all(Val::Px(8.0)),
-                ))
-                .with_children(|card| {
-                    // Model preview image
-                    if let Some(img) = previews.tower_images.get(base.name) {
-                        card.spawn((
-                            ImageNode::new(img.clone()),
-                            Node {
-                                width: Val::Px(80.0),
-                                height: Val::Px(80.0),
-                                margin: UiRect::bottom(Val::Px(4.0)),
-                                ..default()
-                            },
-                            BorderRadius::all(Val::Px(6.0)),
-                        ));
-                    }
+            grid.spawn((
+                Node {
+                    width: Val::Px(200.0),
+                    min_height: Val::Px(100.0),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::all(Val::Px(8.0)),
+                    row_gap: Val::Px(3.0),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.12, 0.08, 0.18, 0.9)),
+                BorderRadius::all(Val::Px(8.0)),
+            ))
+            .with_children(|card| {
+                // Model preview image
+                if let Some(img) = previews.tower_images.get(base.name) {
                     card.spawn((
-                        Text::new(base.name),
-                        TextFont { font_size: 18.0, ..default() },
-                        TextColor(color),
+                        ImageNode::new(img.clone()),
+                        Node {
+                            width: Val::Px(80.0),
+                            height: Val::Px(80.0),
+                            margin: UiRect::bottom(Val::Px(4.0)),
+                            ..default()
+                        },
+                        BorderRadius::all(Val::Px(6.0)),
                     ));
+                }
+                card.spawn((
+                    Text::new(base.name),
+                    TextFont { font_size: 18.0, ..default() },
+                    TextColor(color),
+                ));
+                card.spawn((
+                    Text::new(format!("Cost: {}g  DMG: {:.0}  RNG: {:.1}", base.cost, base.damage, base.range)),
+                    TextFont { font_size: 12.0, ..default() },
+                    TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                    Node { align_self: AlignSelf::FlexStart, ..default() },
+                ));
+                // Specializations
+                let specs = element_specializations(*element);
+                for (_, spec_def) in &specs {
                     card.spawn((
-                        Text::new(format!("Cost: {}g  DMG: {:.0}  RNG: {:.1}", base.cost, base.damage, base.range)),
-                        TextFont { font_size: 12.0, ..default() },
-                        TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                        Text::new(format!("{} — {}", spec_def.name, spec_def.description)),
+                        TextFont { font_size: 10.0, ..default() },
+                        TextColor(Color::srgb(0.5, 0.5, 0.7)),
                         Node { align_self: AlignSelf::FlexStart, ..default() },
                     ));
-                    // Specializations
-                    let specs = element_specializations(*element);
-                    for (_, spec_def) in &specs {
-                        card.spawn((
-                            Text::new(format!("{} — {}", spec_def.name, spec_def.description)),
-                            TextFont { font_size: 10.0, ..default() },
-                            TextColor(Color::srgb(0.5, 0.5, 0.7)),
-                            Node { align_self: AlignSelf::FlexStart, ..default() },
-                        ));
-                    }
-                });
-            }
+                }
+            });
+        }
         });
     });
 }
@@ -3247,8 +3650,9 @@ fn handle_logbook(
     interactions: Query<(&Interaction, &MenuButton), Changed<Interaction>>,
     mut next_state: ResMut<NextState<AppState>>,
     pages: Query<Entity, With<LogbookPageRoot>>,
-    roots: Query<Entity, With<MenuScreenRoot>>,
+    containers: Query<Entity, With<LogbookPageContainer>>,
     previews: Res<crate::systems::logbook_preview::LogbookPreviews>,
+    mut scroll_offset: ResMut<LogbookScrollOffset>,
 ) {
     for (interaction, btn) in &interactions {
         if *interaction != Interaction::Pressed { continue; }
@@ -3257,28 +3661,57 @@ fn handle_logbook(
                 next_state.set(AppState::MainMenu);
             }
             MenuAction::LogbookEnemies => {
-                // Remove current page and spawn enemies
+                scroll_offset.0 = 0.0;
                 for entity in &pages {
                     commands.entity(entity).despawn_recursive();
                 }
-                if let Ok(root_entity) = roots.get_single() {
-                    commands.entity(root_entity).with_children(|root| {
-                        spawn_logbook_enemies(root, &previews);
+                if let Ok(container) = containers.get_single() {
+                    commands.entity(container).with_children(|c| {
+                        spawn_logbook_enemies(c, &previews);
                     });
                 }
             }
             MenuAction::LogbookTowers => {
+                scroll_offset.0 = 0.0;
                 for entity in &pages {
                     commands.entity(entity).despawn_recursive();
                 }
-                if let Ok(root_entity) = roots.get_single() {
-                    commands.entity(root_entity).with_children(|root| {
-                        spawn_logbook_towers(root, &previews);
+                if let Ok(container) = containers.get_single() {
+                    commands.entity(container).with_children(|c| {
+                        spawn_logbook_towers(c, &previews);
                     });
                 }
             }
             _ => {}
         }
+    }
+}
+
+/// Manual scroll for the logbook page via mouse wheel + touch drag.
+/// Moves the inner content grid up/down by adjusting its top offset.
+fn logbook_scroll(
+    mut scroll_events: EventReader<bevy::input::mouse::MouseWheel>,
+    touches: Res<Touches>,
+    mut scroll_offset: ResMut<LogbookScrollOffset>,
+    mut grids: Query<&mut Node, With<LogbookScrollContent>>,
+) {
+    let mut dy = 0.0;
+    for event in scroll_events.read() {
+        dy -= match event.unit {
+            bevy::input::mouse::MouseScrollUnit::Line => event.y * 50.0,
+            bevy::input::mouse::MouseScrollUnit::Pixel => event.y,
+        };
+    }
+    // Touch drag: use the first finger's vertical delta
+    for finger in touches.iter() {
+        let delta = finger.delta();
+        dy -= delta.y;
+    }
+    if dy == 0.0 { return; }
+
+    scroll_offset.0 = (scroll_offset.0 + dy).clamp(0.0, 3000.0);
+    for mut node in &mut grids {
+        node.top = Val::Px(-scroll_offset.0);
     }
 }
 

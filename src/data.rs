@@ -26,7 +26,7 @@ pub fn level1_build_spots() -> Vec<Vec3> {
         Vec3::new(-1.0, 0.0, 4.0),
         Vec3::new(1.0, 0.0, -4.0),
         Vec3::new(4.0, 0.0, 9.5),
-        Vec3::new(9.5, 0.0, 3.0),
+        Vec3::new(10.0, 0.0, 3.0),
         Vec3::new(8.0, 0.0, -4.0),
     ]
 }
@@ -97,6 +97,9 @@ pub struct EnemyStats {
     pub rotation_y: f32,
     /// Whether this enemy type is a healer (gets HealerAura component).
     pub is_healer: bool,
+    /// Optional bone remapping table: (mixamo_name, model_name) pairs.
+    /// Used to retarget Mixamo animations onto non-Mixamo rigs.
+    pub bone_map: Option<&'static [(&'static str, &'static str)]>,
 }
 
 /// Shared Mixamo animation files for skinned enemies.
@@ -105,6 +108,39 @@ const SKINNED_ANIMS: [&str; 4] = [
     "models/enemies/anims/idle.glb",
     "models/enemies/anims/attack.glb",
     "models/enemies/anims/die.glb",
+];
+
+/// Legionary animation — walk from embedded model clip, sword-parry for attack.
+/// Uses the model's own GLB for walk/idle/death and sword-parry for attack.
+const LEGIONARY_ANIMS: [&str; 4] = [
+    "models/enemies/legionary.glb",        // walk (Animation0 = rig|rig|walk)
+    "models/enemies/legionary.glb",        // idle (same walk clip)
+    "models/enemies/anims/sword-parry.glb", // attack
+    "models/enemies/legionary.glb",        // death (walk clip + rocking overlay)
+];
+
+/// Bone remapping: Mixamo rig → Legionary custom rig.
+const LEGIONARY_BONE_MAP: &[(&str, &str)] = &[
+    ("mixamorig:Hips", "body"),
+    ("mixamorig:Spine", "body_top0"),
+    ("mixamorig:Spine1", "body_top1"),
+    ("mixamorig:Spine2", "body_top2"),
+    ("mixamorig:Neck", "neck"),
+    ("mixamorig:Head", "head"),
+    ("mixamorig:LeftShoulder", "shoulder_left"),
+    ("mixamorig:LeftArm", "arm_left_top"),
+    ("mixamorig:LeftForeArm", "arm_left_bot"),
+    ("mixamorig:LeftHand", "arm_left_hand"),
+    ("mixamorig:RightShoulder", "shoulder_right"),
+    ("mixamorig:RightArm", "arm_right_top"),
+    ("mixamorig:RightForeArm", "arm_right_bot"),
+    ("mixamorig:RightHand", "arm_right_hand"),
+    ("mixamorig:LeftUpLeg", "leg_left_top"),
+    ("mixamorig:LeftLeg", "leg_left_bot"),
+    ("mixamorig:LeftFoot", "leg_left_foot"),
+    ("mixamorig:RightUpLeg", "leg_right_top"),
+    ("mixamorig:RightLeg", "leg_right_bot"),
+    ("mixamorig:RightFoot", "leg_right_foot"),
 ];
 
 pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
@@ -117,49 +153,49 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             gold_reward: 14, model_path: "models/enemies/PinkBlob.gltf",
             model_scale: 0.4, is_flying: false, tint: None,
             anim_indices: [7, 4, 0, 2],
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Jellyfish => EnemyStats {
             hp: 40.0, speed: 2.5, armor: 0.0, magic_resist: 0.3,
             gold_reward: 19, model_path: "models/enemies/Hywirl.gltf",
             model_scale: 0.4, is_flying: true, tint: None,
             anim_indices: [1, 2, 3, 0],
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Sporebloom => EnemyStats {
             hp: 30.0, speed: 1.5, armor: 0.0, magic_resist: 0.2,
             gold_reward: 19, model_path: "models/enemies/GreenBlob.gltf",
             model_scale: 0.4, is_flying: false, tint: Some([0.6, 0.3, 0.7]),
             anim_indices: [7, 4, 0, 2],
-            anim_files: None, rotation_y: 0.0, is_healer: true,
+            anim_files: None, rotation_y: 0.0, is_healer: true, bone_map: None,
         },
         EnemyType::Trilobite => EnemyStats {
             hp: 80.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 24, model_path: "models/enemies/GreenBlob.gltf",
             model_scale: 0.6, is_flying: false, tint: None,
             anim_indices: [7, 4, 0, 2],
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::SeaScorpion => EnemyStats {
             hp: 40.0, speed: 3.5, armor: 0.0, magic_resist: 0.0,
             gold_reward: 19, model_path: "models/enemies/GreenSpikyBlob.gltf",
             model_scale: 0.3, is_flying: false, tint: None,
             anim_indices: [7, 4, 0, 2],
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Nautilus => EnemyStats {
             hp: 200.0, speed: 1.5, armor: 40.0, magic_resist: 0.0,
             gold_reward: 24, model_path: "models/enemies/GreenSpikyBlob.gltf",
             model_scale: 0.4, is_flying: false, tint: Some([0.2, 0.5, 1.0]),
             anim_indices: [7, 4, 0, 2],
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::GiantWorm => EnemyStats {
             hp: 600.0, speed: 1.2, armor: 10.0, magic_resist: 0.1,
             gold_reward: 100, model_path: "models/enemies/GreenSpikyBlob.gltf",
             model_scale: 0.7, is_flying: false, tint: Some([0.7, 0.3, 0.2]),
             anim_indices: [7, 4, 0, 2],
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
 
         // =====================================================================
@@ -170,49 +206,49 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             gold_reward: 16, model_path: "models/enemies/velociraptor.glb",
             model_scale: 0.15, is_flying: false, tint: Some([0.24, 0.53, 0.16]),
             anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Stegosaurus => EnemyStats {
             hp: 60.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 16, model_path: "models/enemies/stegosaurus.glb",
             model_scale: 0.18, is_flying: false, tint: Some([0.24, 0.53, 0.42]),
             anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Parasaur => EnemyStats {
             hp: 55.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 15, model_path: "models/enemies/parasaurolophus.glb",
             model_scale: 0.15, is_flying: false, tint: Some([0.33, 0.67, 0.27]),
             anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Triceratops => EnemyStats {
-            hp: 180.0, speed: 1.5, armor: 35.0, magic_resist: 0.0,
+            hp: 180.0, speed: 1.5, armor: 35.0, magic_resist: 0.1,
             gold_reward: 24, model_path: "models/enemies/triceratops.glb",
             model_scale: 0.2, is_flying: false, tint: Some([0.77, 0.47, 0.19]),
             anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Pterodactyl => EnemyStats {
             hp: 40.0, speed: 2.5, armor: 0.0, magic_resist: 0.3,
             gold_reward: 19, model_path: "models/enemies/dragon.glb",
             model_scale: 0.35, is_flying: true, tint: Some([0.80, 0.27, 0.20]),
             anim_indices: [3, 3, 0, 2], // Flying, Flying, Attack, Death (dragon.glb)
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::CompyHealer => EnemyStats {
             hp: 30.0, speed: 2.0, armor: 0.0, magic_resist: 0.2,
             gold_reward: 19, model_path: "models/enemies/parasaurolophus.glb",
             model_scale: 0.12, is_flying: false, tint: Some([0.67, 0.33, 0.80]),
             anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
-            anim_files: None, rotation_y: 0.0, is_healer: true,
+            anim_files: None, rotation_y: 0.0, is_healer: true, bone_map: None,
         },
         EnemyType::TRex => EnemyStats {
             hp: 550.0, speed: 1.1, armor: 15.0, magic_resist: 0.1,
             gold_reward: 90, model_path: "models/enemies/trex.glb",
             model_scale: 0.35, is_flying: false, tint: Some([0.53, 0.27, 0.13]),
             anim_indices: [4, 2, 0, 1], // Run, Idle, Attack, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
 
         // =====================================================================
@@ -224,22 +260,22 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             gold_reward: 16, model_path: "models/enemies/caveman.glb",
             model_scale: 1.0, is_flying: false, tint: None,
             anim_indices: [255; 4],
-            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
+            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false, bone_map: None,
         },
-        // Animal — procedural animation
+        // Animal — embedded Run anim + procedural rocking for attack/death
         EnemyType::Sabertooth => EnemyStats {
             hp: 40.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 17, model_path: "models/enemies/sabertooth.glb",
             model_scale: 1.2, is_flying: false, tint: None,
-            anim_indices: [0, 0, 0, 0], // single embedded Run anim for all states
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_indices: [0, 0, 0, 0],
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Mammoth => EnemyStats {
             hp: 200.0, speed: 1.5, armor: 40.0, magic_resist: 0.0,
             gold_reward: 26, model_path: "models/enemies/mammoth.glb",
             model_scale: 1.6, is_flying: false, tint: None,
             anim_indices: [2, 1, 0, 0], // Walk, Idle, HeadShake, HeadShake (no death anim)
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         // Humanoid — Mixamo external anims
         EnemyType::Shaman => EnemyStats {
@@ -247,7 +283,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             gold_reward: 20, model_path: "models/enemies/shaman.glb",
             model_scale: 0.7, is_flying: false, tint: None,
             anim_indices: [255; 4],
-            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true,
+            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true, bone_map: None,
         },
         // Animal — procedural animation
         EnemyType::GiantEagle => EnemyStats {
@@ -256,21 +292,21 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             model_scale: 0.025, is_flying: true, tint: None,
             anim_indices: [0, 0, 0, 0], // single embedded fly anim for all states
             anim_files: None,
-            rotation_y: 0.0, is_healer: false, // facing handled by EnemyModelRotation on child
+            rotation_y: 0.0, is_healer: false, bone_map: None, // facing handled by EnemyModelRotation on child
         },
         EnemyType::Dodo => EnemyStats {
             hp: 35.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 16, model_path: "models/enemies/dodo.glb",
             model_scale: 0.13, is_flying: false, tint: None,
             anim_indices: [255; 4],
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::WoollyRhino => EnemyStats {
             hp: 650.0, speed: 1.0, armor: 20.0, magic_resist: 0.1,
             gold_reward: 100, model_path: "models/enemies/woolly-rhino.glb",
             model_scale: 2.5, is_flying: false, tint: None,
             anim_indices: [2, 2, 0, 1], // Walk, Walk, Bite, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
 
         // =====================================================================
@@ -278,11 +314,12 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         // =====================================================================
         // Humanoid — Mixamo external anims
         EnemyType::Legionary => EnemyStats {
-            hp: 65.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
+            hp: 65.0, speed: 2.0, armor: 0.0, magic_resist: 0.1,
             gold_reward: 17, model_path: "models/enemies/legionary.glb",
-            model_scale: 0.025, is_flying: false, tint: None,
-            anim_indices: [0, 0, 0, 0], // only has embedded walk anim (#0) for all states
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            model_scale: 0.015, is_flying: false, tint: None,
+            anim_indices: [255; 4],
+            anim_files: Some(LEGIONARY_ANIMS), rotation_y: 0.0, is_healer: false,
+            bone_map: None,
         },
         // Animal — procedural animation
         EnemyType::Lion => EnemyStats {
@@ -290,14 +327,14 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             gold_reward: 18, model_path: "models/enemies/lion.glb",
             model_scale: 1.5, is_flying: false, tint: Some([0.82, 0.62, 0.32]),
             anim_indices: [2, 3, 0, 1], // Run, Walk, Bite, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::WarElephant => EnemyStats {
-            hp: 250.0, speed: 1.5, armor: 50.0, magic_resist: 0.0,
+            hp: 250.0, speed: 1.5, armor: 50.0, magic_resist: 0.15,
             gold_reward: 28, model_path: "models/enemies/war-elephant.glb",
             model_scale: 2.5, is_flying: false, tint: None,
             anim_indices: [2, 2, 0, 1], // Walk, Walk, Bite, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::EagleScout => EnemyStats {
             hp: 40.0, speed: 2.5, armor: 0.0, magic_resist: 0.3,
@@ -305,7 +342,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             model_scale: 0.03, is_flying: true, tint: Some([0.45, 0.30, 0.18]),
             anim_indices: [0, 0, 0, 0], // single embedded fly anim for all states
             anim_files: None,
-            rotation_y: 0.0, is_healer: false, // facing handled by EnemyModelRotation on child
+            rotation_y: 0.0, is_healer: false, bone_map: None, // facing handled by EnemyModelRotation on child
         },
         // Humanoid — Mixamo external anims
         EnemyType::Medicus => EnemyStats {
@@ -313,14 +350,14 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             gold_reward: 22, model_path: "models/enemies/medicus.glb",
             model_scale: 0.7, is_flying: false, tint: None,
             anim_indices: [255; 4],
-            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true,
+            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true, bone_map: None,
         },
         EnemyType::Minotaur => EnemyStats {
-            hp: 700.0, speed: 1.0, armor: 15.0, magic_resist: 0.1,
-            gold_reward: 110, model_path: "models/enemies/minotaur.glb",
-            model_scale: 0.5, is_flying: false, tint: None,
-            anim_indices: [1, 0, 1, 0], // Walk/Attack, Idle, Walk/Attack, Idle
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            hp: 700.0, speed: 1.0, armor: 15.0, magic_resist: 0.15,
+            gold_reward: 110, model_path: "models/enemies/minotaur-mixamo.glb",
+            model_scale: 1.2, is_flying: false, tint: Some([0.45, 0.3, 0.2]),
+            anim_indices: [255; 4],
+            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false, bone_map: None,
         },
 
         // =====================================================================
@@ -328,25 +365,25 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         // =====================================================================
         // Humanoid — Mixamo external anims
         EnemyType::Footman => EnemyStats {
-            hp: 70.0, speed: 2.0, armor: 0.0, magic_resist: 0.0,
+            hp: 70.0, speed: 2.0, armor: 0.0, magic_resist: 0.1,
             gold_reward: 18, model_path: "models/enemies/footman.glb",
             model_scale: 1.0, is_flying: false, tint: None,
             anim_indices: [255; 4],
-            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
+            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Cavalry => EnemyStats {
             hp: 50.0, speed: 3.0, armor: 0.0, magic_resist: 0.0,
             gold_reward: 19, model_path: "models/enemies/cavalry-horse.glb",
             model_scale: 0.5, is_flying: false, tint: None,
             anim_indices: [1, 3, 2, 3], // Trot, Rest, Gallop, Rest
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         EnemyType::Knight => EnemyStats {
-            hp: 220.0, speed: 1.5, armor: 45.0, magic_resist: 0.0,
+            hp: 220.0, speed: 1.5, armor: 45.0, magic_resist: 0.2,
             gold_reward: 26, model_path: "models/enemies/knight.glb",
             model_scale: 0.8, is_flying: false, tint: None,
             anim_indices: [255; 4],
-            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false,
+            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         // Animal — procedural animation
         EnemyType::Wyvern => EnemyStats {
@@ -354,22 +391,22 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
             gold_reward: 22, model_path: "models/enemies/dragon.glb",
             model_scale: 0.3, is_flying: true, tint: None,
             anim_indices: [3, 3, 0, 2], // Flying, Flying, Attack, Death (same as Pterodactyl)
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
         // Humanoid — Mixamo external anims
         EnemyType::Priest => EnemyStats {
             hp: 35.0, speed: 1.8, armor: 0.0, magic_resist: 0.2,
             gold_reward: 22, model_path: "models/enemies/medicus.glb",
-            model_scale: 0.25, is_flying: false, tint: Some([0.8, 0.8, 1.0]),
+            model_scale: 0.6, is_flying: false, tint: Some([0.8, 0.8, 1.0]),
             anim_indices: [255; 4],
-            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true,
+            anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true, bone_map: None,
         },
         EnemyType::Dragon => EnemyStats {
-            hp: 800.0, speed: 1.2, armor: 10.0, magic_resist: 0.1,
+            hp: 800.0, speed: 1.2, armor: 10.0, magic_resist: 0.15,
             gold_reward: 120, model_path: "models/enemies/dragon.glb",
             model_scale: 0.7, is_flying: false, tint: Some([0.8, 0.2, 0.1]),
             anim_indices: [3, 3, 0, 2], // Flying, Flying, Attack, Death
-            anim_files: None, rotation_y: 0.0, is_healer: false,
+            anim_files: None, rotation_y: 0.0, is_healer: false, bone_map: None,
         },
     }
 }
@@ -411,17 +448,17 @@ pub fn tower_stats(element: Element, level: u8) -> TowerStats {
 
         // Earth — slow physical melee (uses projectiles until golems in Phase 4)
         (Element::Earth, 0) => TowerStats {
-            name: "Clay Barracks", cost: 70, damage: 4.0,
+            name: "Clay Barracks", cost: 70, damage: 6.0,
             attack_speed: 0.8, range: 5.0,
             model_path: "models/towers/tower-earth.glb", model_scale: 1.2,
         },
         (Element::Earth, 1) => TowerStats {
-            name: "Stone Barracks", cost: 110, damage: 6.0,
+            name: "Stone Barracks", cost: 110, damage: 9.0,
             attack_speed: 0.9, range: 5.5,
             model_path: "models/towers/tower-earth.glb", model_scale: 1.35,
         },
         (Element::Earth, 2) => TowerStats {
-            name: "Golem Fortress", cost: 160, damage: 9.0,
+            name: "Golem Fortress", cost: 160, damage: 14.0,
             attack_speed: 1.0, range: 6.0,
             model_path: "models/towers/tower-earth.glb", model_scale: 1.5,
         },
@@ -570,6 +607,84 @@ pub fn element_specializations(element: Element) -> [(TowerSpecialization, Speci
             }),
         ],
     }
+}
+
+/// Spec upgrade info for upgrading from one spec level to the next.
+pub struct SpecUpgrade {
+    pub cost: u32,
+    pub description: &'static str,
+    /// Multiplicative damage bonus applied to tower's current damage.
+    pub damage_mult: f32,
+    /// Flat range bonus added.
+    pub range_bonus: f32,
+}
+
+/// Maximum specialization level (1 = base spec, 2 and 3 are upgrades).
+pub const MAX_SPEC_LEVEL: u8 = 3;
+
+/// Returns the upgrade info for upgrading a spec to the given level (2 or 3).
+/// Returns None if already at max or if `to_level` is invalid.
+pub fn spec_upgrade_info(spec: TowerSpecialization, to_level: u8) -> Option<SpecUpgrade> {
+    if to_level < 2 || to_level > MAX_SPEC_LEVEL { return None; }
+    Some(match (spec, to_level) {
+        // Lightning — Storm Spire
+        (TowerSpecialization::StormSpire, 2) => SpecUpgrade {
+            cost: 250, description: "Chains to 3 enemies", damage_mult: 1.25, range_bonus: 0.5,
+        },
+        (TowerSpecialization::StormSpire, 3) => SpecUpgrade {
+            cost: 350, description: "Chains to 4 enemies, +stun", damage_mult: 1.3, range_bonus: 0.5,
+        },
+        // Lightning — Railgun
+        (TowerSpecialization::Railgun, 2) => SpecUpgrade {
+            cost: 250, description: "Pierces 2 enemies", damage_mult: 1.3, range_bonus: 1.0,
+        },
+        (TowerSpecialization::Railgun, 3) => SpecUpgrade {
+            cost: 350, description: "Pierces all, armor shred", damage_mult: 1.35, range_bonus: 1.0,
+        },
+        // Earth — Mountain King
+        (TowerSpecialization::MountainKing, 2) => SpecUpgrade {
+            cost: 250, description: "Golem gains AoE slam", damage_mult: 1.25, range_bonus: 0.0,
+        },
+        (TowerSpecialization::MountainKing, 3) => SpecUpgrade {
+            cost: 350, description: "Golem stuns on slam", damage_mult: 1.3, range_bonus: 0.0,
+        },
+        // Earth — Bramble Grove
+        (TowerSpecialization::BrambleGrove, 2) => SpecUpgrade {
+            cost: 250, description: "Wider aura, stronger slow", damage_mult: 1.25, range_bonus: 1.0,
+        },
+        (TowerSpecialization::BrambleGrove, 3) => SpecUpgrade {
+            cost: 350, description: "Roots enemies briefly", damage_mult: 1.3, range_bonus: 1.0,
+        },
+        // Ice — Blizzard Tower
+        (TowerSpecialization::BlizzardTower, 2) => SpecUpgrade {
+            cost: 300, description: "Deeper freeze (30% slow)", damage_mult: 1.2, range_bonus: 0.5,
+        },
+        (TowerSpecialization::BlizzardTower, 3) => SpecUpgrade {
+            cost: 400, description: "Frostbite: frozen deal 2x dmg", damage_mult: 1.25, range_bonus: 0.5,
+        },
+        // Ice — Shatter Mage
+        (TowerSpecialization::ShatterMage, 2) => SpecUpgrade {
+            cost: 300, description: "4x crit on slowed", damage_mult: 1.25, range_bonus: 0.5,
+        },
+        (TowerSpecialization::ShatterMage, 3) => SpecUpgrade {
+            cost: 400, description: "5x crit, AoE shatter on kill", damage_mult: 1.3, range_bonus: 0.5,
+        },
+        // Fire — Inferno Cannon
+        (TowerSpecialization::InfernoCannon, 2) => SpecUpgrade {
+            cost: 300, description: "Larger burn zones", damage_mult: 1.25, range_bonus: 0.5,
+        },
+        (TowerSpecialization::InfernoCannon, 3) => SpecUpgrade {
+            cost: 400, description: "Burn zones stack damage", damage_mult: 1.3, range_bonus: 0.5,
+        },
+        // Fire — Meteor Tower
+        (TowerSpecialization::MeteorTower, 2) => SpecUpgrade {
+            cost: 300, description: "Wider blast radius", damage_mult: 1.3, range_bonus: 1.0,
+        },
+        (TowerSpecialization::MeteorTower, 3) => SpecUpgrade {
+            cost: 400, description: "Volcanic eruption on impact", damage_mult: 1.35, range_bonus: 1.0,
+        },
+        _ => return None,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -856,8 +971,8 @@ pub fn level2_build_spots() -> Vec<Vec3> {
         Vec3::new(9.0, 0.0, -4.0),
         Vec3::new(3.0, 0.0, 7.0),
         Vec3::new(8.0, 0.0, 9.0),
-        Vec3::new(12.0, 0.0, 5.0),
-        Vec3::new(16.0, 0.0, -1.0),
+        Vec3::new(14.0, 0.0, 6.5),
+        Vec3::new(18.5, 0.0, -0.5),
     ]
 }
 
@@ -956,7 +1071,7 @@ pub fn level3_build_spots() -> Vec<Vec3> {
         Vec3::new(-10.0, 0.0, 3.0),
         Vec3::new(-6.0, 0.0, -3.0),
         Vec3::new(-2.0, 0.0, 9.0),
-        Vec3::new(4.0, 0.0, 3.0),
+        Vec3::new(1.5, 0.0, 1.5),
         Vec3::new(8.0, 0.0, -7.0),
         Vec3::new(8.0, 0.0, 3.0),
         Vec3::new(12.0, 0.0, -7.0),
@@ -1123,10 +1238,10 @@ pub fn level5_build_spots() -> Vec<Vec3> {
         Vec3::new(-14.0, 0.0, -9.0),
         Vec3::new(-8.0, 0.0, -3.0),
         Vec3::new(-4.0, 0.0, -9.0),
-        Vec3::new(0.0, 0.0, 3.0),
+        Vec3::new(-2.0, 0.0, 4.5),
         Vec3::new(5.0, 0.0, 9.0),
         Vec3::new(5.0, 0.0, 3.0),
-        Vec3::new(10.0, 0.0, 4.0),
+        Vec3::new(11.5, 0.0, 4.5),
         Vec3::new(14.0, 0.0, -3.0),
     ]
 }
@@ -1170,16 +1285,16 @@ pub fn level5_waves() -> Vec<WaveDefinition> {
             WaveGroup { enemy_type: EnemyType::GiantEagle, count: 5, interval: 0.6, delay: 0.0, pulse: 2 },
         ]},
         WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 15, interval: 0.3, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 6, interval: 0.6, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Caveman, count: 18, interval: 0.25, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Mammoth, count: 7, interval: 0.5, delay: 0.0, pulse: 1 },
             WaveGroup { enemy_type: EnemyType::Shaman, count: 4, interval: 0.7, delay: 0.5, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 5, interval: 0.5, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 6, interval: 0.45, delay: 0.0, pulse: 2 },
         ]},
         WaveDefinition { early_call_bonus: 35, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 6, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 3, interval: 0.8, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 12, interval: 0.3, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 6, interval: 0.5, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Mammoth, count: 8, interval: 0.6, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Shaman, count: 4, interval: 0.7, delay: 1.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 15, interval: 0.25, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 7, interval: 0.45, delay: 0.0, pulse: 2 },
         ]},
     ]
 }
@@ -1251,24 +1366,24 @@ pub fn level6_waves() -> Vec<WaveDefinition> {
             WaveGroup { enemy_type: EnemyType::Shaman, count: 4, interval: 0.7, delay: 0.5, pulse: 1 },
         ]},
         WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 8, interval: 0.6, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 4, interval: 0.7, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 6, interval: 0.5, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 12, interval: 0.3, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Mammoth, count: 10, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Shaman, count: 5, interval: 0.6, delay: 1.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 7, interval: 0.45, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 15, interval: 0.25, delay: 0.0, pulse: 2 },
         ]},
         WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 15, interval: 0.2, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 6, interval: 0.6, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 6, interval: 0.5, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 4, interval: 0.7, delay: 0.5, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 18, interval: 0.18, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Mammoth, count: 8, interval: 0.5, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 7, interval: 0.45, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Shaman, count: 5, interval: 0.6, delay: 0.5, pulse: 2 },
         ]},
         // Wave 10 — Woolly Rhino boss
         WaveDefinition { early_call_bonus: 40, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 4, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 2, interval: 1.0, delay: 1.5, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Mammoth, count: 5, interval: 0.7, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Shaman, count: 3, interval: 0.8, delay: 1.5, pulse: 0 },
             WaveGroup { enemy_type: EnemyType::WoollyRhino, count: 1, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 10, interval: 0.3, delay: 1.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 5, interval: 0.5, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 12, interval: 0.25, delay: 1.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 6, interval: 0.45, delay: 0.0, pulse: 2 },
         ]},
     ]
 }
@@ -1291,19 +1406,19 @@ pub struct WaveRoster {
 pub fn make_waves(r: &WaveRoster) -> Vec<WaveDefinition> {
     let wave10 = if let Some(boss) = r.boss {
         WaveDefinition { early_call_bonus: 40, groups: vec![
-            WaveGroup { enemy_type: r.tank, count: 4, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.healer, count: 2, interval: 1.0, delay: 1.5, pulse: 0 },
+            WaveGroup { enemy_type: r.tank, count: 5, interval: 0.7, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.healer, count: 3, interval: 0.8, delay: 1.5, pulse: 0 },
             WaveGroup { enemy_type: boss, count: 1, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.fast, count: 10, interval: 0.3, delay: 1.0, pulse: 1 },
-            WaveGroup { enemy_type: r.flyer, count: 5, interval: 0.5, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: r.tank, count: 4, interval: 0.7, delay: 1.0, pulse: 2 },
+            WaveGroup { enemy_type: r.fast, count: 12, interval: 0.25, delay: 1.0, pulse: 1 },
+            WaveGroup { enemy_type: r.flyer, count: 6, interval: 0.5, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: r.tank, count: 5, interval: 0.6, delay: 1.0, pulse: 2 },
         ]}
     } else {
         WaveDefinition { early_call_bonus: 40, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 18, interval: 0.2, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.tank, count: 8, interval: 0.5, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.flyer, count: 6, interval: 0.5, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: r.healer, count: 4, interval: 0.7, delay: 1.0, pulse: 2 },
+            WaveGroup { enemy_type: r.grunt, count: 22, interval: 0.18, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.tank, count: 10, interval: 0.5, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.flyer, count: 7, interval: 0.45, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: r.healer, count: 5, interval: 0.6, delay: 1.0, pulse: 2 },
         ]}
     };
 
@@ -1342,29 +1457,29 @@ pub fn make_waves(r: &WaveRoster) -> Vec<WaveDefinition> {
             WaveGroup { enemy_type: r.tank, count: 3, interval: 1.0, delay: 0.0, pulse: 1 },
             WaveGroup { enemy_type: r.healer, count: 2, interval: 1.0, delay: 1.5, pulse: 1 },
         ]},
-        // Wave 7: 12 grunts + 6 fast + 4 tank + 3 flyer + 2 healer
+        // Wave 7: 14 grunts + 7 fast + 5 tank + 4 flyer + 3 healer
         WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 12, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.fast, count: 6, interval: 0.3, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.tank, count: 4, interval: 0.8, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.flyer, count: 3, interval: 0.7, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: r.healer, count: 2, interval: 1.0, delay: 1.0, pulse: 2 },
-        ]},
-        // Wave 8: 12 grunts + 8 fast + 5 tank + 4 flyer + 3 healer
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 12, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.fast, count: 8, interval: 0.3, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.grunt, count: 14, interval: 0.35, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.fast, count: 7, interval: 0.3, delay: 0.0, pulse: 1 },
             WaveGroup { enemy_type: r.tank, count: 5, interval: 0.7, delay: 0.0, pulse: 1 },
             WaveGroup { enemy_type: r.flyer, count: 4, interval: 0.6, delay: 0.0, pulse: 2 },
             WaveGroup { enemy_type: r.healer, count: 3, interval: 0.8, delay: 1.0, pulse: 2 },
         ]},
-        // Wave 9: 15 grunts + 8 fast + 6 tank + 5 flyer + 3 healer
-        WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 15, interval: 0.3, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.fast, count: 8, interval: 0.3, delay: 0.0, pulse: 1 },
+        // Wave 8: 15 grunts + 10 fast + 6 tank + 5 flyer + 3 healer
+        WaveDefinition { early_call_bonus: 25, groups: vec![
+            WaveGroup { enemy_type: r.grunt, count: 15, interval: 0.35, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.fast, count: 10, interval: 0.25, delay: 0.0, pulse: 1 },
             WaveGroup { enemy_type: r.tank, count: 6, interval: 0.6, delay: 0.0, pulse: 1 },
             WaveGroup { enemy_type: r.flyer, count: 5, interval: 0.5, delay: 0.0, pulse: 2 },
             WaveGroup { enemy_type: r.healer, count: 3, interval: 0.8, delay: 1.0, pulse: 2 },
+        ]},
+        // Wave 9: 18 grunts + 10 fast + 7 tank + 6 flyer + 4 healer
+        WaveDefinition { early_call_bonus: 30, groups: vec![
+            WaveGroup { enemy_type: r.grunt, count: 18, interval: 0.25, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.fast, count: 10, interval: 0.25, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.tank, count: 7, interval: 0.5, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.flyer, count: 6, interval: 0.45, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: r.healer, count: 4, interval: 0.7, delay: 1.0, pulse: 2 },
         ]},
         // Wave 10: boss + escort (or heavy wave if no boss)
         wave10,
@@ -1438,7 +1553,7 @@ pub fn level8_build_spots() -> Vec<Vec3> {
         Vec3::new(-10.0, 0.0, -5.0),
         Vec3::new(-5.0, 0.0, 2.0),
         Vec3::new(-5.0, 0.0, -9.0),
-        Vec3::new(1.0, 0.0, -3.0),
+        Vec3::new(1.0, 0.0, -0.5),
         Vec3::new(6.0, 0.0, -5.0),
         Vec3::new(6.0, 0.0, 8.0),
         Vec3::new(11.0, 0.0, 2.0),
@@ -1524,7 +1639,7 @@ pub fn level10_build_spots() -> Vec<Vec3> {
         Vec3::new(-10.0, 0.0, 6.0),
         Vec3::new(-5.0, 0.0, 0.0),
         Vec3::new(-5.0, 0.0, 9.0),
-        Vec3::new(1.0, 0.0, 4.0),
+        Vec3::new(0.0, 0.0, 1.5),
         Vec3::new(6.0, 0.0, 7.0),
         Vec3::new(6.0, 0.0, -7.0),
         Vec3::new(11.0, 0.0, 0.0),
@@ -1632,14 +1747,14 @@ pub fn level_start_config(level: u32) -> LevelStartConfig {
     match level {
         1  => LevelStartConfig { starting_gold: 220, lives: 20, max_waves: 10, wave_hp_scale: 0.10, wave_speed_scale: 0.015 },
         2  => LevelStartConfig { starting_gold: 220, lives: 20, max_waves: 10, wave_hp_scale: 0.10, wave_speed_scale: 0.015 },
-        3  => LevelStartConfig { starting_gold: 220, lives: 20, max_waves: 10, wave_hp_scale: 0.12, wave_speed_scale: 0.02 },
-        4  => LevelStartConfig { starting_gold: 240, lives: 18, max_waves: 10, wave_hp_scale: 0.12, wave_speed_scale: 0.02 },
-        5  => LevelStartConfig { starting_gold: 250, lives: 18, max_waves: 10, wave_hp_scale: 0.11, wave_speed_scale: 0.018 },
-        6  => LevelStartConfig { starting_gold: 250, lives: 16, max_waves: 10, wave_hp_scale: 0.12, wave_speed_scale: 0.02 },
-        7  => LevelStartConfig { starting_gold: 350, lives: 18, max_waves: 10, wave_hp_scale: 0.11, wave_speed_scale: 0.018 },
-        8  => LevelStartConfig { starting_gold: 260, lives: 16, max_waves: 10, wave_hp_scale: 0.12, wave_speed_scale: 0.02 },
-        9  => LevelStartConfig { starting_gold: 280, lives: 16, max_waves: 10, wave_hp_scale: 0.12, wave_speed_scale: 0.02 },
-        10 => LevelStartConfig { starting_gold: 280, lives: 14, max_waves: 10, wave_hp_scale: 0.13, wave_speed_scale: 0.022 },
+        3  => LevelStartConfig { starting_gold: 220, lives: 18, max_waves: 10, wave_hp_scale: 0.12, wave_speed_scale: 0.02 },
+        4  => LevelStartConfig { starting_gold: 240, lives: 18, max_waves: 10, wave_hp_scale: 0.14, wave_speed_scale: 0.02 },
+        5  => LevelStartConfig { starting_gold: 250, lives: 18, max_waves: 10, wave_hp_scale: 0.14, wave_speed_scale: 0.02 },
+        6  => LevelStartConfig { starting_gold: 250, lives: 18, max_waves: 10, wave_hp_scale: 0.16, wave_speed_scale: 0.022 },
+        7  => LevelStartConfig { starting_gold: 310, lives: 16, max_waves: 10, wave_hp_scale: 0.17, wave_speed_scale: 0.02 },
+        8  => LevelStartConfig { starting_gold: 260, lives: 14, max_waves: 10, wave_hp_scale: 0.24, wave_speed_scale: 0.025 },
+        9  => LevelStartConfig { starting_gold: 280, lives: 14, max_waves: 10, wave_hp_scale: 0.25, wave_speed_scale: 0.026 },
+        10 => LevelStartConfig { starting_gold: 280, lives: 12, max_waves: 10, wave_hp_scale: 0.27, wave_speed_scale: 0.028 },
         _  => LevelStartConfig { starting_gold: 220, lives: 20, max_waves: 10, wave_hp_scale: 0.10, wave_speed_scale: 0.015 },
     }
 }
@@ -1813,6 +1928,18 @@ pub fn enemy_info(enemy_type: EnemyType) -> EnemyInfo {
     }
 }
 
+/// Returns true for enemy types that serve as wave-10 bosses.
+pub fn is_boss_type(enemy_type: EnemyType) -> bool {
+    matches!(
+        enemy_type,
+        EnemyType::GiantWorm
+            | EnemyType::TRex
+            | EnemyType::WoollyRhino
+            | EnemyType::Minotaur
+            | EnemyType::Dragon
+    )
+}
+
 pub const ALL_ENEMY_TYPES: [EnemyType; 33] = [
     // Primordial
     EnemyType::Amoeba, EnemyType::Jellyfish, EnemyType::Sporebloom,
@@ -1841,6 +1968,50 @@ pub struct AbilityDef {
     pub effect: AbilityEffect,
     pub color: [f32; 3],
 }
+
+// ---------------------------------------------------------------------------
+// Global player abilities (meteor & reinforcements)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PlayerAbilityType {
+    Meteor,
+    Reinforcements,
+}
+
+pub struct PlayerAbilityDef {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub cooldown: f32,
+    pub icon_color: [f32; 3],
+}
+
+pub fn player_ability_def(ability: PlayerAbilityType) -> PlayerAbilityDef {
+    match ability {
+        PlayerAbilityType::Meteor => PlayerAbilityDef {
+            name: "Meteor",
+            description: "Massive AoE damage",
+            cooldown: 30.0,
+            icon_color: [1.0, 0.4, 0.1],
+        },
+        PlayerAbilityType::Reinforcements => PlayerAbilityDef {
+            name: "Reinforcements",
+            description: "Spawn soldiers",
+            cooldown: 40.0,
+            icon_color: [0.3, 0.7, 0.3],
+        },
+    }
+}
+
+/// Meteor stats
+pub const METEOR_DAMAGE: f32 = 200.0;
+pub const METEOR_RADIUS: f32 = 4.0;
+
+/// Reinforcements stats
+pub const REINFORCEMENT_COUNT: u32 = 2;
+pub const REINFORCEMENT_HP: f32 = 150.0;
+pub const REINFORCEMENT_DAMAGE: f32 = 8.0;
+pub const REINFORCEMENT_DURATION: f32 = 15.0;
 
 #[derive(Clone, Copy, Debug)]
 pub enum AbilityEffect {

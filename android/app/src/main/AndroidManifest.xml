@@ -4,6 +4,7 @@
     <application
         android:label="Ages of Aether"
         android:hasCode="true"
+        android:icon="@mipmap/ic_launcher"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
         <activity
             android:name="com.agesofaether.game.ImmersiveActivity"

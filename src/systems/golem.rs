@@ -1,9 +1,17 @@
 use bevy::prelude::*;
+use bevy::animation::{AnimationTargetId, VariableCurve};
 use crate::components::*;
 
 /// Marker for golems that need their animation set up after scene loads.
 #[derive(Component)]
 pub struct GolemNeedsAnimation;
+
+/// Golem animation clips that need root motion stripped.
+#[derive(Component)]
+pub struct GolemClipsNeedStrip {
+    pub handles: Vec<Handle<AnimationClip>>,
+    pub stripped: bool,
+}
 
 /// Timer placed on a tower when its golems die. Prevents instant respawn.
 #[derive(Component)]
@@ -163,9 +171,11 @@ pub fn setup_golem_animations(
         };
 
         // Build graph with idle, walk, and attack clips
-        let idle_clip = asset_server.load("models/golems/golem-idle.glb#Animation0");
-        let walk_clip = asset_server.load("models/golems/golem-walk.glb#Animation0");
-        let attack_clip = asset_server.load("models/golems/golem-attack.glb#Animation0");
+        let idle_clip: Handle<AnimationClip> = asset_server.load("models/golems/golem-idle.glb#Animation0");
+        let walk_clip: Handle<AnimationClip> = asset_server.load("models/golems/golem-walk.glb#Animation0");
+        let attack_clip: Handle<AnimationClip> = asset_server.load("models/golems/golem-attack.glb#Animation0");
+
+        let strip_handles = vec![idle_clip.clone(), walk_clip.clone(), attack_clip.clone()];
 
         let mut graph = AnimationGraph::new();
         let idle_node = graph.add_clip(idle_clip, 1.0, graph.root);
@@ -176,13 +186,16 @@ pub fn setup_golem_animations(
         commands.entity(player_entity).insert(AnimationGraphHandle(graph_handle));
 
         // Store animation state on the golem entity
-        commands.entity(golem_entity).insert(GolemAnimState {
-            idle_node,
-            walk_node,
-            attack_node,
-            current: GolemAnimKind::Idle,
-            player_entity,
-        });
+        commands.entity(golem_entity).insert((
+            GolemAnimState {
+                idle_node,
+                walk_node,
+                attack_node,
+                current: GolemAnimKind::Idle,
+                player_entity,
+            },
+            GolemClipsNeedStrip { handles: strip_handles, stripped: false },
+        ));
         commands.entity(golem_entity).remove::<GolemNeedsAnimation>();
 
         info!("Golem {:?} animation graph attached (idle/walk/attack)", golem_entity);
@@ -564,5 +577,43 @@ pub fn cleanup_orphan_golems(
         if towers.get(owner.0).is_err() {
             commands.entity(golem_entity).despawn_recursive();
         }
+    }
+}
+
+/// Strips root motion (Hips translation) from golem animation clips.
+pub fn strip_golem_root_motion(
+    mut golems: Query<&mut GolemClipsNeedStrip>,
+    mut clips: ResMut<Assets<AnimationClip>>,
+) {
+    let hips_id = AnimationTargetId::from_names(
+        [Name::new("Armature"), Name::new("mixamorig:Hips")].iter(),
+    );
+
+    for mut strip in &mut golems {
+        if strip.stripped { continue; }
+
+        let all_loaded = strip.handles.iter().all(|h| clips.get(h).is_some());
+        if !all_loaded { continue; }
+
+        let handles: Vec<_> = strip.handles.clone();
+        for handle in &handles {
+            if let Some(clip) = clips.get_mut(handle) {
+                for (target_id, curves) in clip.curves_mut().iter_mut() {
+                    if *target_id == hips_id {
+                        // Root bone: strip position tracks, keep rotation
+                        if curves.len() >= 2 {
+                            let rotation = VariableCurve(curves[1].0.clone_value());
+                            curves.clear();
+                            curves.push(rotation);
+                        }
+                    } else if curves.len() == 3 {
+                        // Non-root: strip scale, keep translation + rotation
+                        curves.truncate(2);
+                    }
+                }
+            }
+        }
+        strip.stripped = true;
+        info!("Golem root motion stripped");
     }
 }

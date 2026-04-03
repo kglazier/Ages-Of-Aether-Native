@@ -110,6 +110,12 @@ pub fn camera_control(
         }
     }
 
+    // --- Clamp focus to map boundaries (with small margin) ---
+    const MAP_HALF_X: f32 = 21.0;  // ~18 map + 3 margin
+    const MAP_HALF_Z: f32 = 12.0;  // ~9 map + 3 margin
+    focus.target.x = focus.target.x.clamp(-MAP_HALF_X, MAP_HALF_X);
+    focus.target.z = focus.target.z.clamp(-MAP_HALF_Z, MAP_HALF_Z);
+
     // --- Position camera at 45-degree angle above focus point ---
     let offset = Vec3::new(0.0, focus.distance * 0.7, focus.distance * 0.65);
     transform.translation = focus.target + offset;

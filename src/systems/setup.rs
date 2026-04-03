@@ -35,6 +35,13 @@ pub fn cleanup_game_world(
         commands.entity(entity).despawn_recursive();
     }
     debug_state.show_overlay = false;
+    // Reset sky color and ambient light so they don't bleed into menu screens
+    commands.insert_resource(ClearColor(Color::srgb(0.05, 0.05, 0.1)));
+    commands.insert_resource(AmbientLight {
+        color: Color::WHITE,
+        brightness: 100.0,
+        ..default()
+    });
 }
 
 /// Runs once when entering Playing state.
@@ -172,7 +179,150 @@ pub fn setup_level(
     }
 
     // --- Environment scenery ---
-    scatter_scenery(&mut commands, &asset_server, &path, &spots);
+    scatter_scenery(&mut commands, &asset_server, &path, &spots, level);
+
+    // --- Level landmarks ---
+    spawn_landmarks(&mut commands, &asset_server, &mut meshes, &mut materials, level);
+}
+
+/// Spawns level-specific landmark assets (volcano, coliseum, castle) as background decoration.
+fn spawn_landmarks(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    meshes: &mut ResMut<Assets<Mesh>>,
+    materials: &mut ResMut<Assets<StandardMaterial>>,
+    level: u32,
+) {
+    use crate::components::GameWorldEntity;
+
+    struct Landmark {
+        model: &'static str,
+        scale: f32,
+        pos: Vec3,
+        rotation_y: f32,
+        is_volcano: bool,
+    }
+
+    let landmarks: Vec<Landmark> = match level {
+        // Prehistoric — large volcano with lava stream
+        3 => vec![
+            Landmark { model: "models/environment/volcano.glb#Scene0", scale: 10.5, pos: Vec3::new(-2.0, 0.0, -5.5), rotation_y: 0.3, is_volcano: true },
+        ],
+        4 => vec![
+            Landmark { model: "models/environment/volcano.glb#Scene0", scale: 12.0, pos: Vec3::new(14.5, 0.0, -6.5), rotation_y: 0.1, is_volcano: true },
+        ],
+        // Stone Age — procedural mountains (handled below)
+        5 | 6 => vec![],
+        // Ancient — coliseum backdrop
+        7 => vec![
+            Landmark { model: "models/environment/coliseum.glb#Scene0", scale: 0.0056, pos: Vec3::new(-4.0, 0.0, -7.0), rotation_y: 0.0, is_volcano: false },
+        ],
+        8 => vec![
+            Landmark { model: "models/environment/coliseum.glb#Scene0", scale: 0.004, pos: Vec3::new(-2.0, 0.0, 6.5), rotation_y: 0.0, is_volcano: false },
+        ],
+        // Medieval — castle backdrop
+        9 => vec![
+            Landmark { model: "models/environment/castle.glb#Scene0", scale: 2.0, pos: Vec3::new(20.0, 0.0, 2.5), rotation_y: 0.5, is_volcano: false },
+        ],
+        10 => vec![
+            Landmark { model: "models/environment/castle.glb#Scene0", scale: 5.0, pos: Vec3::new(-4.5, 0.0, -9.5), rotation_y: -0.3, is_volcano: false },
+        ],
+        _ => vec![],
+    };
+
+    for lm in &landmarks {
+        let mut entity_cmd = commands.spawn((
+            SceneRoot(asset_server.load(lm.model)),
+            Transform::from_translation(lm.pos)
+                .with_rotation(Quat::from_rotation_y(lm.rotation_y))
+                .with_scale(Vec3::splat(lm.scale)),
+            GameWorldEntity,
+        ));
+        if lm.is_volcano {
+            entity_cmd.insert(VolcanoModel);
+        }
+    }
+
+    // Snow-capped mountains for stone age levels (5, 6)
+    if level == 5 || level == 6 {
+        let mountain_body = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.15, 0.18, 0.35),
+            perceptual_roughness: 0.9,
+            ..default()
+        });
+        let snow_cap = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.92, 0.95, 1.0),
+            perceptual_roughness: 0.6,
+            ..default()
+        });
+
+        // (position, body_height, body_radius, snow_height, snow_radius)
+        let mountains: &[(Vec3, f32, f32, f32, f32)] = &[
+            (Vec3::new(-18.0, 0.0, -14.0), 6.0, 3.0, 1.5, 1.3),
+            (Vec3::new(-6.0, 0.0, -18.0), 8.0, 3.5, 2.0, 1.5),
+            (Vec3::new(8.0, 0.0, -17.0), 7.0, 3.0, 1.8, 1.3),
+            (Vec3::new(20.0, 0.0, -14.0), 5.0, 2.5, 1.3, 1.1),
+        ];
+
+        for (pos, body_h, body_r, snow_h, snow_r) in mountains {
+            // Mountain body — dark blue cone
+            commands.spawn((
+                Mesh3d(meshes.add(Cone::new(*body_r, *body_h))),
+                MeshMaterial3d(mountain_body.clone()),
+                Transform::from_translation(*pos + Vec3::Y * body_h * 0.5),
+                GameWorldEntity,
+            ));
+            // Snow cap — white cone on top
+            commands.spawn((
+                Mesh3d(meshes.add(Cone::new(*snow_r, *snow_h))),
+                MeshMaterial3d(snow_cap.clone()),
+                Transform::from_translation(*pos + Vec3::Y * (body_h - snow_h * 0.3)),
+                GameWorldEntity,
+            ));
+        }
+    }
+
+    // Lava stream for prehistoric levels (3, 4) — flows from volcano base
+    if level == 3 || level == 4 {
+        let lava_material = materials.add(StandardMaterial {
+            base_color: Color::srgb(0.9, 0.3, 0.0),
+            emissive: bevy::color::LinearRgba::new(3.0, 0.8, 0.1, 1.0),
+            unlit: true,
+            ..default()
+        });
+
+        // Stream segments: series of stretched quads from volcano base outward
+        // Each segment: (start_pos, end_pos, width)
+        let stream_segments: &[(Vec3, Vec3, f32)] = if level == 3 {
+            &[
+                (Vec3::new(-2.0, 0.03, -3.0), Vec3::new(-2.5, 0.03, 2.0), 1.2),
+                (Vec3::new(-2.5, 0.03, 2.0), Vec3::new(-4.0, 0.03, 8.0), 1.0),
+                (Vec3::new(-4.0, 0.03, 8.0), Vec3::new(-5.0, 0.03, 15.0), 0.8),
+            ]
+        } else {
+            &[
+                (Vec3::new(14.5, 0.03, -4.0), Vec3::new(13.0, 0.03, 2.0), 1.2),
+                (Vec3::new(13.0, 0.03, 2.0), Vec3::new(11.0, 0.03, 8.0), 1.0),
+                (Vec3::new(11.0, 0.03, 8.0), Vec3::new(10.0, 0.03, 15.0), 0.8),
+            ]
+        };
+
+        for (i, (start, end, width)) in stream_segments.iter().enumerate() {
+            let center = (*start + *end) / 2.0;
+            let diff = *end - *start;
+            let length = diff.length();
+            let angle = diff.z.atan2(diff.x);
+
+            commands.spawn((
+                Mesh3d(meshes.add(Cuboid::new(length, 0.02, *width))),
+                MeshMaterial3d(lava_material.clone()),
+                Transform::from_translation(center)
+                    .with_rotation(Quat::from_rotation_y(-angle)),
+                GameWorldEntity,
+                crate::components::LavaStream { phase: i as f32 * 1.5 },
+            ));
+        }
+    }
 }
 
 /// Scatters decorative models around the map, avoiding the path and build spots.
@@ -181,6 +331,7 @@ fn scatter_scenery(
     asset_server: &Res<AssetServer>,
     path: &[Vec3],
     build_spots: &[Vec3],
+    _level: u32,
 ) {
     // Scenery definitions: (model_path, scale, count)
     let scenery = [
@@ -248,6 +399,56 @@ fn scatter_scenery(
                     crate::components::GameWorldEntity,
                 ));
                 break;
+            }
+        }
+    }
+}
+
+/// Animates lava stream segments and volcano lava materials with pulsing emissive.
+pub fn animate_lava(
+    time: Res<Time>,
+    lava_q: Query<(&LavaStream, &MeshMaterial3d<StandardMaterial>)>,
+    volcano_q: Query<Entity, With<VolcanoModel>>,
+    children_q: Query<&Children>,
+    mesh_mat_q: Query<&MeshMaterial3d<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    let t = time.elapsed_secs();
+
+    // Animate lava stream segments
+    for (lava, mat_handle) in &lava_q {
+        let Some(mat) = materials.get_mut(&mat_handle.0) else { continue };
+        let wave = (t * 0.8 + lava.phase).sin() * 0.5 + 0.5; // slower
+        let bright = 0.6 + wave * 0.4;
+        mat.base_color = Color::srgb(0.9 * bright, 0.25 * bright, 0.0);
+        mat.emissive = bevy::color::LinearRgba::new(
+            3.0 * bright,
+            0.6 + wave * 0.4,
+            0.05 + wave * 0.15,
+            1.0,
+        );
+    }
+
+    // Animate volcano model's lava-colored materials to match the stream
+    let volcano_wave = (t * 0.8).sin() * 0.5 + 0.5;
+    let v_bright = 0.6 + volcano_wave * 0.4;
+    for volcano_entity in &volcano_q {
+        let mut stack = vec![volcano_entity];
+        while let Some(entity) = stack.pop() {
+            if let Ok(children) = children_q.get(entity) {
+                stack.extend(children.iter());
+            }
+            let Ok(mat_handle) = mesh_mat_q.get(entity) else { continue };
+            let Some(mat) = materials.get_mut(&mat_handle.0) else { continue };
+            // Only modify warm-colored materials (lava parts of the volcano)
+            let [r, g, b, _] = mat.base_color.to_srgba().to_f32_array();
+            if r > 0.4 && r > g * 1.5 {
+                mat.emissive = bevy::color::LinearRgba::new(
+                    r * 2.0 * v_bright,
+                    g * 1.5 * v_bright,
+                    b * 0.5,
+                    1.0,
+                );
             }
         }
     }

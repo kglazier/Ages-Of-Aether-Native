@@ -72,21 +72,24 @@ pub fn check_audio_loaded(
     }
 }
 
-/// Helper: only spawn an AudioPlayer if assets are loaded.
-fn try_play(commands: &mut Commands, handle: &Handle<AudioSource>, audio: &AudioAssets) {
-    if !audio.all_loaded { return; }
-    commands.spawn((
-        AudioPlayer(handle.clone()),
-        PlaybackSettings::DESPAWN,
-    ));
-}
-
-fn try_play_volume(commands: &mut Commands, handle: &Handle<AudioSource>, audio: &AudioAssets, vol: f32) {
+/// Helper: spawn an SFX AudioPlayer scaled by the SFX volume setting.
+fn try_play_sfx(commands: &mut Commands, handle: &Handle<AudioSource>, audio: &AudioAssets, vol_settings: &VolumeSettings) {
     if !audio.all_loaded { return; }
     commands.spawn((
         AudioPlayer(handle.clone()),
         PlaybackSettings {
-            volume: bevy::audio::Volume::new(vol),
+            volume: bevy::audio::Volume::new(vol_settings.sfx),
+            ..PlaybackSettings::DESPAWN
+        },
+    ));
+}
+
+fn try_play_sfx_scaled(commands: &mut Commands, handle: &Handle<AudioSource>, audio: &AudioAssets, vol_settings: &VolumeSettings, scale: f32) {
+    if !audio.all_loaded { return; }
+    commands.spawn((
+        AudioPlayer(handle.clone()),
+        PlaybackSettings {
+            volume: bevy::audio::Volume::new(vol_settings.sfx * scale),
             ..PlaybackSettings::DESPAWN
         },
     ));
@@ -97,6 +100,7 @@ pub fn start_battle_music(
     mut commands: Commands,
     audio_assets: Option<Res<AudioAssets>>,
     music_q: Query<Entity, With<BgMusic>>,
+    vol_settings: Res<VolumeSettings>,
 ) {
     let Some(audio) = audio_assets else { return };
     if !audio.all_loaded { return; }
@@ -106,11 +110,22 @@ pub fn start_battle_music(
         AudioPlayer(audio.battle_music.clone()),
         PlaybackSettings {
             mode: bevy::audio::PlaybackMode::Loop,
-            volume: bevy::audio::Volume::new(0.3),
+            volume: bevy::audio::Volume::new(vol_settings.music * 0.6),
             ..default()
         },
         BgMusic,
     ));
+}
+
+/// Syncs music volume when VolumeSettings changes.
+pub fn sync_music_volume(
+    vol_settings: Res<VolumeSettings>,
+    music_q: Query<&AudioSink, With<BgMusic>>,
+) {
+    if !vol_settings.is_changed() { return; }
+    for sink in &music_q {
+        sink.set_volume(vol_settings.music * 0.6);
+    }
 }
 
 /// Plays SFX when enemies die (triggered by DeathEffect spawning).
@@ -118,10 +133,11 @@ pub fn play_death_sfx(
     mut commands: Commands,
     new_deaths: Query<Entity, Added<DeathEffect>>,
     audio_assets: Option<Res<AudioAssets>>,
+    vol_settings: Res<VolumeSettings>,
 ) {
     let Some(audio) = audio_assets else { return };
     if new_deaths.iter().next().is_some() {
-        try_play(&mut commands, &audio.enemy_death, &audio);
+        try_play_sfx(&mut commands, &audio.enemy_death, &audio, &vol_settings);
     }
 }
 
@@ -131,6 +147,7 @@ pub fn play_tower_attack_sfx(
     mut commands: Commands,
     new_flashes: Query<&MuzzleFlash, Added<MuzzleFlash>>,
     audio_assets: Option<Res<AudioAssets>>,
+    vol_settings: Res<VolumeSettings>,
 ) {
     let Some(audio) = audio_assets else { return };
     for flash in &new_flashes {
@@ -140,7 +157,7 @@ pub fn play_tower_attack_sfx(
             crate::components::Element::Ice => &audio.tower_ice,
             crate::components::Element::Earth => &audio.tower_earth,
         };
-        try_play_volume(&mut commands, handle, &audio, 0.4);
+        try_play_sfx_scaled(&mut commands, handle, &audio, &vol_settings, 0.8);
         break; // Only play one SFX per frame to avoid overlap
     }
 }
@@ -187,6 +204,7 @@ pub fn play_wave_sfx(
     mut commands: Commands,
     wave: Res<WaveState>,
     audio_assets: Option<Res<AudioAssets>>,
+    vol_settings: Res<VolumeSettings>,
     mut last_phase: Local<Option<u8>>,
 ) {
     let Some(audio) = audio_assets else { return };
@@ -207,10 +225,10 @@ pub fn play_wave_sfx(
 
     match wave.phase {
         WavePhase::Spawning => {
-            try_play_volume(&mut commands, &audio.wave_start, &audio, 0.5);
+            try_play_sfx(&mut commands, &audio.wave_start, &audio, &vol_settings);
         }
         WavePhase::Idle if was_active => {
-            try_play_volume(&mut commands, &audio.wave_complete, &audio, 0.5);
+            try_play_sfx(&mut commands, &audio.wave_complete, &audio, &vol_settings);
         }
         _ => {}
     }
