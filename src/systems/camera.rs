@@ -110,11 +110,14 @@ pub fn camera_control(
         }
     }
 
-    // --- Clamp focus to map boundaries (with small margin) ---
-    const MAP_HALF_X: f32 = 21.0;  // ~18 map + 3 margin
-    const MAP_HALF_Z: f32 = 12.0;  // ~9 map + 3 margin
-    focus.target.x = focus.target.x.clamp(-MAP_HALF_X, MAP_HALF_X);
-    focus.target.z = focus.target.z.clamp(-MAP_HALF_Z, MAP_HALF_Z);
+    // --- Clamp focus to map boundaries ---
+    // Tighten bounds as camera zooms out so the visible area stays on the map.
+    // At min zoom (10) the focus can move freely; at max zoom (45) it's tight.
+    let zoom_t = ((focus.distance - 10.0) / 35.0).clamp(0.0, 1.0); // 0 at close, 1 at far
+    let half_x = 18.0 - zoom_t * 10.0;  // 18 close → 8 far
+    let half_z = 9.0 - zoom_t * 5.0;    // 9 close → 4 far
+    focus.target.x = focus.target.x.clamp(-half_x, half_x);
+    focus.target.z = focus.target.z.clamp(-half_z, half_z);
 
     // --- Position camera at 45-degree angle above focus point ---
     let offset = Vec3::new(0.0, focus.distance * 0.7, focus.distance * 0.65);

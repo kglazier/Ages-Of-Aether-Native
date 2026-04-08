@@ -397,7 +397,7 @@ pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
         EnemyType::Priest => EnemyStats {
             hp: 35.0, speed: 1.8, armor: 0.0, magic_resist: 0.2,
             gold_reward: 22, model_path: "models/enemies/medicus.glb",
-            model_scale: 0.6, is_flying: false, tint: Some([0.8, 0.8, 1.0]),
+            model_scale: 0.6, is_flying: false, tint: Some([0.75, 0.6, 0.25]),
             anim_indices: [255; 4],
             anim_files: Some(SKINNED_ANIMS), rotation_y: 0.0, is_healer: true, bone_map: None,
         },

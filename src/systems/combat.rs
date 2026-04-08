@@ -725,15 +725,16 @@ pub fn fix_blend_enemy_materials(
 ) {
     for (entity, children) in &enemies {
         let mut mesh_count = 0;
-        let mut fixed_count = 0;
         let mut stack: Vec<Entity> = children.iter().copied().collect();
         while let Some(child) = stack.pop() {
             if let Ok(mat_handle) = mesh_q.get(child) {
                 mesh_count += 1;
-                if let Some(mat) = materials.get_mut(&mat_handle.0) {
-                    if mat.alpha_mode == AlphaMode::Blend {
-                        mat.alpha_mode = AlphaMode::Opaque;
-                        fixed_count += 1;
+                if let Some(mat) = materials.get(&mat_handle.0) {
+                    if mat.alpha_mode != AlphaMode::Opaque {
+                        // Only call get_mut when actually needed
+                        if let Some(mat_mut) = materials.get_mut(&mat_handle.0) {
+                            mat_mut.alpha_mode = AlphaMode::Opaque;
+                        }
                     }
                 }
             }
@@ -741,12 +742,42 @@ pub fn fix_blend_enemy_materials(
                 stack.extend(grandchildren.iter());
             }
         }
-        // Remove marker once we've found any mesh children
         if mesh_count >= 1 {
-            if fixed_count > 0 {
-                info!("Fixed {fixed_count} BLEND materials on enemy {:?}", entity);
-            }
             commands.entity(entity).remove::<NeedsBlendFix>();
+        }
+    }
+}
+
+/// Periodic sweep: force ALL enemy and golem materials to Opaque to prevent
+/// transparency glitches when enemies cluster near golems.
+/// Uses read-only check first to avoid triggering Bevy change detection unnecessarily.
+pub fn enforce_opaque_enemies(
+    enemy_q: Query<&Children, Or<(With<Enemy>, With<Golem>)>>,
+    children_q: Query<&Children>,
+    mesh_q: Query<&MeshMaterial3d<StandardMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    // First pass: collect handles that need fixing (read-only)
+    let mut to_fix: Vec<Handle<StandardMaterial>> = Vec::new();
+    for children in &enemy_q {
+        let mut stack: Vec<Entity> = children.iter().copied().collect();
+        while let Some(child) = stack.pop() {
+            if let Ok(mat_handle) = mesh_q.get(child) {
+                if let Some(mat) = materials.get(&mat_handle.0) {
+                    if mat.alpha_mode != AlphaMode::Opaque {
+                        to_fix.push(mat_handle.0.clone());
+                    }
+                }
+            }
+            if let Ok(grandchildren) = children_q.get(child) {
+                stack.extend(grandchildren.iter());
+            }
+        }
+    }
+    // Second pass: only mutate the ones that actually need it
+    for handle in &to_fix {
+        if let Some(mat) = materials.get_mut(handle) {
+            mat.alpha_mode = AlphaMode::Opaque;
         }
     }
 }

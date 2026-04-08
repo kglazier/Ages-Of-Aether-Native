@@ -23,6 +23,7 @@ pub fn handle_world_click(
     golems: Query<(&Transform, &GolemOwner), With<Golem>>,
     mut selection: ResMut<Selection>,
     mut hero_move_cmd: ResMut<crate::resources::HeroMoveCommand>,
+    mut ability_targeting: ResMut<crate::resources::PlayerAbilityTargeting>,
     // Don't process world clicks if a UI button is being hovered/pressed
     ui_interactions: Query<&Interaction, With<Button>>,
 ) {
@@ -31,9 +32,10 @@ pub fn handle_world_click(
         return;
     }
 
-    // Escape clears selection
+    // Escape clears selection and cancels ability targeting
     if keys.just_pressed(KeyCode::Escape) {
         *selection = Selection::None;
+        ability_targeting.0 = None;
         return;
     }
 
@@ -67,6 +69,12 @@ pub fn handle_world_click(
         return;
     };
     let world_pos = ray.get_point(distance);
+
+    // If targeting a player ability, consume tap as ability target position
+    if ability_targeting.0.is_some() {
+        hero_move_cmd.0 = Some(world_pos);
+        return;
+    }
 
     // Check hero first (tap to select hero) — skip if already selected so
     // that clicking near the hero commands a short move instead of re-selecting.

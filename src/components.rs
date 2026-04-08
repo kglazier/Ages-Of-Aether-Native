@@ -6,7 +6,7 @@ use crate::data::EnemyType;
 // ---------------------------------------------------------------------------
 
 /// Marker for all entities that belong to the game world and should be cleaned up on restart.
-#[derive(Component)]
+#[derive(Component, Clone, Copy)]
 pub struct GameWorldEntity;
 
 /// Marker: enemy needs BLEND→OPAQUE material fix after scene loads.
@@ -210,6 +210,12 @@ pub struct DeathEffect {
     pub elapsed: f32,
 }
 
+/// Simple timed despawn — no visual effects, just removes the entity after time.
+#[derive(Component)]
+pub struct TimedDespawn {
+    pub remaining: f32,
+}
+
 /// Floating gold indicator that rises and fades.
 #[derive(Component)]
 pub struct GoldPopup {
@@ -266,7 +272,7 @@ pub struct HealerRing(pub Entity);
 // ---------------------------------------------------------------------------
 
 /// Small visual markers showing tower upgrade level.
-#[derive(Component)]
+#[derive(Component, Clone)]
 pub struct UpgradeIndicator {
     pub tower: Entity,
 }
@@ -274,6 +280,16 @@ pub struct UpgradeIndicator {
 /// Tracks the last known level so we know when to refresh indicators.
 #[derive(Component)]
 pub struct LastKnownLevel(pub u8);
+
+/// Orbiting spec-level indicator that circles the tower.
+#[derive(Component)]
+pub struct OrbitingIndicator {
+    pub center: bevy::math::Vec3,
+    pub radius: f32,
+    pub height: f32,
+    pub speed: f32,
+    pub offset: f32,
+}
 
 // ---------------------------------------------------------------------------
 // Tower specializations

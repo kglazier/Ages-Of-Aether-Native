@@ -1869,8 +1869,8 @@ fn setup_game_over_screen(mut commands: Commands, outcome: Res<GameOutcome>, gam
     };
 
     let stars_text = if outcome.victory {
-        let filled: String = (0..outcome.stars).map(|_| '\u{2605}').collect(); // filled star
-        let empty: String = (0..(3 - outcome.stars)).map(|_| '\u{2606}').collect(); // empty star
+        let filled: String = (0..outcome.stars).map(|_| '*').collect();
+        let empty: String = (0..(3 - outcome.stars)).map(|_| '-').collect();
         format!("{}{}", filled, empty)
     } else {
         String::new()
@@ -2061,9 +2061,22 @@ fn handle_restart_button(
 fn cleanup_game_over_screen(
     mut commands: Commands,
     query: Query<Entity, With<GameOverRoot>>,
+    hud_q: Query<Entity, With<HudRoot>>,
+    hero_hud_q: Query<Entity, With<HeroHudRoot>>,
+    mut debug_state: Option<ResMut<crate::systems::debug::DebugState>>,
 ) {
     for entity in &query {
         commands.entity(entity).despawn_recursive();
+    }
+    // Also clean up game HUD which isn't part of GameWorldEntity
+    for entity in &hud_q {
+        commands.entity(entity).despawn_recursive();
+    }
+    for entity in &hero_hud_q {
+        commands.entity(entity).despawn_recursive();
+    }
+    if let Some(ref mut ds) = debug_state {
+        ds.show_overlay = false;
     }
 }
 
@@ -2680,8 +2693,8 @@ fn build_level_select_screen(
                             ));
                             // Star display
                             if stars > 0 {
-                                let filled: String = (0..stars).map(|_| '\u{2605}').collect();
-                                let empty: String = (0..(3u8.saturating_sub(stars))).map(|_| '\u{2606}').collect();
+                                let filled: String = (0..stars).map(|_| '*').collect();
+                                let empty: String = (0..(3u8.saturating_sub(stars))).map(|_| '-').collect();
                                 card.spawn((
                                     Text::new(format!("{}{}", filled, empty)),
                                     TextFont { font_size: 22.0, ..default() },
@@ -3133,8 +3146,8 @@ fn setup_upgrade_shop(
                             TextColor(Color::srgb(0.5, 0.8, 1.0)),
                         ));
                         // Level pips
-                        let filled: String = (0..current_level).map(|_| '\u{25CF}').collect(); // filled circles
-                        let empty: String = (0..(crate::data::UPGRADE_MAX_LEVEL - current_level)).map(|_| '\u{25CB}').collect();
+                        let filled: String = (0..current_level).map(|_| 'o').collect();
+                        let empty: String = (0..(crate::data::UPGRADE_MAX_LEVEL - current_level)).map(|_| '.').collect();
                         card.spawn((
                             Text::new(format!("{}{}", filled, empty)),
                             TextFont { font_size: 18.0, ..default() },
@@ -3396,12 +3409,30 @@ fn setup_logbook(
             },
         ))
         .with_children(|root| {
-            root.spawn((
-                Text::new("Logbook"),
-                TextFont { font_size: 40.0, ..default() },
-                TextColor(Color::srgb(1.0, 0.85, 0.3)),
-                Node { margin: UiRect::bottom(Val::Px(10.0)), ..default() },
-            ));
+            // Top bar: Back button (left) + title (center) + spacer (right)
+            root.spawn(Node {
+                width: Val::Percent(100.0),
+                flex_direction: FlexDirection::Row,
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                margin: UiRect::bottom(Val::Px(10.0)),
+                ..default()
+            }).with_children(|bar| {
+                spawn_menu_button(
+                    bar, "Back",
+                    MenuAction::BackToMenu,
+                    100.0,
+                    Color::srgba(0.3, 0.15, 0.15, 0.9),
+                    Color::srgb(1.0, 0.7, 0.7),
+                );
+                bar.spawn((
+                    Text::new("Logbook"),
+                    TextFont { font_size: 40.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.85, 0.3)),
+                ));
+                // Spacer to balance layout
+                bar.spawn(Node { width: Val::Px(100.0), ..default() });
+            });
 
             // Tab buttons
             root.spawn((
@@ -3417,7 +3448,7 @@ fn setup_logbook(
                 spawn_menu_button(row, "Towers", MenuAction::LogbookTowers, 140.0, Color::srgba(0.1, 0.1, 0.25, 0.9), Color::srgb(0.7, 0.7, 1.0));
             });
 
-            // Persistent container for page content (so Back stays at bottom)
+            // Persistent container for page content
             root.spawn((
                 LogbookPageContainer,
                 Node {
@@ -3430,15 +3461,6 @@ fn setup_logbook(
             )).with_children(|container| {
                 spawn_logbook_enemies(container, &previews);
             });
-
-            // Back button (always last)
-            spawn_menu_button(
-                root, "Back",
-                MenuAction::BackToMenu,
-                160.0,
-                Color::srgba(0.3, 0.15, 0.15, 0.9),
-                Color::srgb(1.0, 0.7, 0.7),
-            );
         });
 }
 
@@ -3494,7 +3516,7 @@ fn spawn_logbook_enemies(parent: &mut ChildBuilder, previews: &crate::systems::l
                 BorderRadius::all(Val::Px(4.0)),
             )).with_children(|header| {
                 header.spawn((
-                    Text::new(format!("— {} —", era_name)),
+                    Text::new(format!("-- {} --", era_name)),
                     TextFont { font_size: 20.0, ..default() },
                     TextColor(Color::srgb(1.0, 0.85, 0.3)),
                 ));
@@ -3555,6 +3577,7 @@ fn spawn_logbook_enemies(parent: &mut ChildBuilder, previews: &crate::systems::l
             });
         }
         } // end era loop
+
 
         });
     });
@@ -3798,7 +3821,7 @@ fn setup_credits(
 
                 // Built with
                 credits_section(scroll, "Built With", &[
-                    "Bevy Engine \u{2022} Rust",
+                    "Bevy Engine + Rust",
                 ]);
 
                 // Thanks

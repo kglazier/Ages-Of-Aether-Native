@@ -108,70 +108,38 @@ pub fn setup_showcase(
     ));
 
     // Animation sources
-    let idle = "models/enemies/anims/idle.glb";
+    let _idle = "models/enemies/anims/idle.glb";
     let golem_anim = "models/golems/golem.glb"; // golem's own embedded anim
-    let maiden_idle = "models/heroes/anims/maiden-idle.glb";
-    let mutant_idle = "models/heroes/anims/mutant-idle.glb";
+    let _maiden_idle = "models/heroes/anims/maiden-idle.glb";
+    let _mutant_idle = "models/heroes/anims/mutant-idle.glb";
 
     let models: Vec<ModelEntry> = vec![
-        // === ROW 1: Towers ===
-        ModelEntry { path: "models/towers/tower-lightning.glb", label: "Lightning Tower", scale: 5.0, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/towers/tower-earth.glb", label: "Earth Tower", scale: 2.0, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/towers/tower-ice.glb", label: "Ice Tower", scale: 5.0, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/towers/tower-fire.glb", label: "Fire Tower", scale: 5.0, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/towers/hive-turret.glb", label: "Hive Turret", scale: 1.25, y_offset: 0.0, anim: "" },
+        // === ROW 1: Lightning towers L0, L1, L2, Spec ===
+        ModelEntry { path: "models/towers/hive-turret.glb", label: "Spark Tower (L0)", scale: 0.75, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/hive-turret.glb", label: "Bolt Tower (L1)", scale: 0.85, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/hive-turret.glb", label: "Storm Tower (L2)", scale: 0.9, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/hive-turret.glb", label: "Storm Spire (Spec)", scale: 0.9, y_offset: 0.0, anim: "" },
+        // === ROW 1 cont: Earth towers L0, L1, L2, Spec ===
+        ModelEntry { path: "models/towers/tower-earth.glb", label: "Clay Barracks (L0)", scale: 1.2, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-earth.glb", label: "Stone Barracks (L1)", scale: 1.35, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-earth.glb", label: "Golem Fort (L2)", scale: 1.5, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-earth.glb", label: "Mountain King (Spec)", scale: 1.5, y_offset: 0.0, anim: "" },
+        // === ROW 2: Ice towers L0, L1, L2, Spec ===
+        ModelEntry { path: "models/towers/tower-ice.glb", label: "Frost Tower (L0)", scale: 1.5, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-ice.glb", label: "Ice Spire (L1)", scale: 1.65, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-ice.glb", label: "Blizzard Tower (L2)", scale: 1.8, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-ice.glb", label: "Shatter Mage (Spec)", scale: 1.8, y_offset: 0.0, anim: "" },
+        // === ROW 2 cont: Fire towers L0, L1, L2, Spec ===
+        ModelEntry { path: "models/towers/tower-lightning.glb", label: "Ember Cannon (L0)", scale: 2.25, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-lightning.glb", label: "Flame Mortar (L1)", scale: 2.4, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-lightning.glb", label: "Inferno (L2)", scale: 2.55, y_offset: 0.0, anim: "" },
+        ModelEntry { path: "models/towers/tower-lightning.glb", label: "Meteor Tower (Spec)", scale: 2.55, y_offset: 0.0, anim: "" },
 
-        // === ROW 2: Heroes (skinned) ===
-        ModelEntry { path: "models/heroes/ice-hulk.glb", label: "Ice Hulk", scale: 1.5, y_offset: 0.0, anim: mutant_idle },
-        ModelEntry { path: "models/heroes/northern-outsider.glb", label: "Northern Outsider", scale: 0.02, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/heroes/pharaoh.glb", label: "Pharaoh", scale: 0.02, y_offset: 0.0, anim: "models/enemies/anims/walk.glb" },
-        ModelEntry { path: "models/heroes/sacred-maiden.glb", label: "Sacred Maiden", scale: 2.0, y_offset: 0.0, anim: maiden_idle },
-        ModelEntry { path: "models/heroes/scarlet-magus.glb", label: "Scarlet Magus", scale: 0.02, y_offset: 0.0, anim: idle },
-
-        // === ROW 3: Golems ===
+        // === ROW 3: Golem ===
         ModelEntry { path: "models/golems/golem.glb", label: "Golem", scale: 90.0, y_offset: 0.0, anim: golem_anim },
-
-        // === ROW 4: Enemies (GLTF - blob style) ===
-        ModelEntry { path: "models/enemies/PinkBlob.gltf", label: "PinkBlob (Amoeba)", scale: 0.5, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/enemies/GreenBlob.gltf", label: "GreenBlob (Spore)", scale: 0.5, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/enemies/GreenSpikyBlob.gltf", label: "GreenSpiky (Naut)", scale: 0.5, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/enemies/Hywirl.gltf", label: "Hywirl (Jelly)", scale: 0.5, y_offset: 0.0, anim: "" },
-
-        // === ROW 5-7: Enemies (GLB - skinned humanoids) ===
-        ModelEntry { path: "models/enemies/caveman.glb", label: "Caveman", scale: 2.0, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/footman.glb", label: "Footman", scale: 2.0, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/knight.glb", label: "Knight", scale: 0.8, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/legionary.glb", label: "Legionary", scale: 0.04, y_offset: 2.0, anim: "models/enemies/anims/sword-parry.glb" },
-        ModelEntry { path: "models/enemies/shaman.glb", label: "Shaman", scale: 2.0, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/medicus.glb", label: "Medicus", scale: 2.0, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/minotaur-mixamo.glb", label: "Minotaur", scale: 0.02, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/sabertooth.glb", label: "Sabertooth", scale: 2.0, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/lion.glb", label: "Lion", scale: 3.0, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/cavalry-knight.glb", label: "Cavalry Knight", scale: 0.01, y_offset: 0.0, anim: idle },
-
-        // === ROW 8-9: Dinosaurs & big animals ===
-        ModelEntry { path: "models/enemies/dodo.glb", label: "Dodo", scale: 0.4, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/velociraptor.glb", label: "Velociraptor", scale: 0.45, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/parasaurolophus.glb", label: "Parasaur", scale: 0.45, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/stegosaurus.glb", label: "Stegosaurus", scale: 0.5, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/triceratops.glb", label: "Triceratops", scale: 0.2, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/trex.glb", label: "T-Rex", scale: 0.2, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/dragon.glb", label: "Dragon", scale: 0.6, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/eagle.glb", label: "Eagle", scale: 0.1, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/mammoth.glb", label: "Mammoth", scale: 2.0, y_offset: 0.0, anim: idle },
-        ModelEntry { path: "models/enemies/woolly-rhino.glb", label: "Woolly Rhino", scale: 5.0, y_offset: 0.0, anim: "models/enemies/woolly-rhino.glb" },
-        ModelEntry { path: "models/enemies/war-elephant.glb", label: "War Elephant", scale: 2.0, y_offset: 0.0, anim: idle },
-
-        // === ROW 10: Environment ===
-        ModelEntry { path: "models/environment/volcano.glb", label: "Volcano", scale: 4.0, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/environment/castle.glb", label: "Castle", scale: 2.0, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/environment/coliseum.glb", label: "Coliseum", scale: 0.0016, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/environment/fern.glb", label: "Fern", scale: 2.0, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/environment/rock.glb", label: "Rock", scale: 2.0, y_offset: 0.0, anim: "" },
-        ModelEntry { path: "models/environment/tree-palm.glb", label: "Palm Tree", scale: 2.0, y_offset: 0.0, anim: "" },
     ];
 
-    let cols = 6;
+    let cols = 4; // L0, L1, L2, Spec per row
     let spacing = 10.0;
 
     for (idx, entry) in models.iter().enumerate() {
@@ -375,45 +343,38 @@ pub fn setup_model_debug(
         ModelDebugEntity,
     ));
 
-    let pharaoh = "models/heroes/pharaoh.glb";
-    let maiden_idle = "models/heroes/anims/maiden-idle.glb";
-    let eagle = "models/enemies/eagle.glb";
-    let eagle_anim = "models/enemies/eagle.glb#Animation0";
     let pi2 = std::f32::consts::FRAC_PI_2;
     let pi = std::f32::consts::PI;
+    let mino = "models/enemies/minotaur-mixamo.glb";
+    let mino_idle = "models/enemies/anims/idle.glb#Animation0";
+    let mino_walk = "models/enemies/anims/crouch-walk.glb#Animation0";
+    let mino_atk = "models/enemies/anims/attack.glb#Animation0";
+    let mino_die = "models/enemies/anims/die.glb#Animation0";
 
-    // (label, model, scale, anim_clip_path, rotation_x, strip_curves)
-    // anim_clip_path is the FULL asset path including #AnimationN
-    let variants: Vec<(&str, &str, f32, &str, f32, bool)> = vec![
-        // Row 1: Pharaoh with different rotations
-        ("Voltra raw",       pharaoh, 0.015, maiden_idle, 0.0, false),
-        ("Voltra +90X",      pharaoh, 0.015, maiden_idle, pi2, false),
-        ("Voltra -90X",      pharaoh, 0.015, maiden_idle, -pi2, false),
-        ("Voltra no anim",   pharaoh, 0.015, "", pi2, false),
-        // Row 2: Eagle Y-rotation variants (all oscillate along +X to show facing)
-        ("Eagle rotY=0",     eagle, 0.04, eagle_anim, 0.0, false),
-        ("Eagle rotY=-90",   eagle, 0.04, eagle_anim, 0.0, false),
-        ("Eagle rotY=+90",   eagle, 0.04, eagle_anim, 0.0, false),
-        ("Eagle rotY=180",   eagle, 0.04, eagle_anim, 0.0, false),
-        // Row 3: Minotaur anim variants
-        ("Mino idle",  "models/enemies/minotaur-mixamo.glb", 1.2, "models/enemies/anims/idle.glb#Animation0", 0.0, false),
-        ("Mino walk",  "models/enemies/minotaur-mixamo.glb", 1.2, "models/enemies/anims/crouch-walk.glb#Animation0", 0.0, false),
-        ("Mino atk",   "models/enemies/minotaur-mixamo.glb", 1.2, "models/enemies/anims/attack.glb#Animation0", 0.0, false),
-        ("Mino die",   "models/enemies/minotaur-mixamo.glb", 1.2, "models/enemies/anims/die.glb#Animation0", 0.0, false),
-    ];
-
-    // Y-rotation overrides for eagle variants (indices 4-7)
-    let eagle_y_rotations: [(usize, f32); 4] = [
-        (4, 0.0),
-        (5, -pi2),
-        (6, pi2),
-        (7, pi),
+    // (label, model, scale, anim_clip_path, rotation_x, rotation_y, strip_curves)
+    // strip_curves = true strips translation+scale from Mixamo clips (keeps rotation only)
+    let variants: Vec<(&str, &str, f32, &str, f32, f32, bool)> = vec![
+        // Row 1: Minotaur anim variants (stripped)
+        ("Mino idle",       mino, 1.2, mino_idle, 0.0, 0.0, true),
+        ("Mino walk",       mino, 1.2, mino_walk, 0.0, 0.0, true),
+        ("Mino atk",        mino, 1.2, mino_atk,  0.0, 0.0, true),
+        ("Mino die",        mino, 1.2, mino_die,  0.0, 0.0, true),
+        // Row 2: No anim + scale variants
+        ("Mino no anim",    mino, 1.2, "",         0.0, 0.0, false),
+        ("Mino small",      mino, 0.5, mino_idle,  0.0, 0.0, true),
+        ("Mino big",        mino, 2.0, mino_idle,  0.0, 0.0, true),
+        ("Mino no anim 2x", mino, 2.0, "",         0.0, 0.0, false),
+        // Row 3: Rotation variants (stripped)
+        ("Mino +90X",       mino, 1.2, mino_idle,  pi2, 0.0, true),
+        ("Mino -90X",       mino, 1.2, mino_idle, -pi2, 0.0, true),
+        ("Mino rotY=90",    mino, 1.2, mino_idle,  0.0, pi2, true),
+        ("Mino rotY=180",   mino, 1.2, mino_idle,  0.0, pi,  true),
     ];
 
     let cols = 4;
     let spacing = 12.0;
 
-    for (idx, (label, model, scale, anim, rot_x, strip_curves)) in variants.iter().enumerate() {
+    for (idx, (label, model, scale, anim, rot_x, rot_y, strip_curves)) in variants.iter().enumerate() {
         let col = idx % cols;
         let row = idx / cols;
         let x = (col as f32 - cols as f32 / 2.0 + 0.5) * spacing;
@@ -425,27 +386,16 @@ pub fn setup_model_debug(
         if *rot_x != 0.0 {
             transform.rotate_x(*rot_x);
         }
-        // Apply Y-rotation overrides for eagle variants
-        for &(eagle_idx, rot_y) in &eagle_y_rotations {
-            if idx == eagle_idx && rot_y != 0.0 {
-                transform.rotate_y(rot_y);
-            }
+        if *rot_y != 0.0 {
+            transform.rotate_y(*rot_y);
         }
 
-        let is_eagle = (4..=7).contains(&idx);
         let mut entity_cmds = commands.spawn((
             SceneRoot(scene),
             transform,
             ShowcaseModel,
             ModelDebugEntity,
         ));
-        // Eagles oscillate back and forth so you can see facing direction
-        if is_eagle {
-            entity_cmds.insert(DebugMover {
-                origin: Vec3::new(x, 2.0, z),
-                speed: 3.0,
-            });
-        }
         if !anim.is_empty() {
             let clip_path = anim.to_string();
             let clip_handle: Handle<AnimationClip> = asset_server.load(&clip_path);
@@ -477,7 +427,7 @@ pub fn setup_model_debug(
         ));
     }
 
-    // Row 3: Cavalry attack animation variants
+    // Cavalry attack animation variants (after minotaur rows)
     let horse_model = "models/enemies/cavalry-horse.glb";
     let knight_model = "models/enemies/cavalry-knight.glb";
     let horse_anim = "models/enemies/cavalry-horse.glb#Animation0"; // Walk
@@ -488,7 +438,7 @@ pub fn setup_model_debug(
         ("Cav: Combined", CavalryDebugStyle::Combined),
     ];
     for (ci, (label, style)) in cavalry_styles.into_iter().enumerate() {
-        let idx = 12 + ci; // continue after row 3 (minotaur)
+        let idx = variants.len() + ci;
         let col = idx % cols;
         let row = idx / cols;
         let x = (col as f32 - cols as f32 / 2.0 + 0.5) * spacing;

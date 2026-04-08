@@ -122,7 +122,7 @@ pub fn spawn_golems(
 
             commands.spawn((
                 SceneRoot(scene),
-                Transform::from_translation(rally).with_scale(Vec3::splat(scale)),
+                Transform::from_translation(rally + Vec3::new(0.0, GOLEM_Y_OFFSET, 0.0)).with_scale(Vec3::splat(scale)),
                 Golem,
                 GolemNeedsAnimation,
                 GolemOwner(tower_entity),
@@ -221,7 +221,10 @@ pub fn update_golem_animations(
     mut players: Query<&mut AnimationPlayer>,
 ) {
     for (mut anim_state, blocking, _attack, golem_transform, rally) in &mut golems {
-        let dist_to_rally = golem_transform.translation.distance(rally.0);
+        // XZ distance only — Y is fixed at GOLEM_Y_OFFSET
+        let dx = golem_transform.translation.x - rally.0.x;
+        let dz = golem_transform.translation.z - rally.0.z;
+        let dist_to_rally = (dx * dx + dz * dz).sqrt();
 
         // Walking to rally point takes priority over combat animations
         let desired = if dist_to_rally > 0.3 {
@@ -240,7 +243,6 @@ pub fn update_golem_animations(
         if desired != anim_state.current {
             anim_state.current = desired;
             if let Ok(mut player) = players.get_mut(anim_state.player_entity) {
-                // Stop all clips before starting the new one
                 player.stop_all();
                 let node = match desired {
                     GolemAnimKind::Idle => anim_state.idle_node,
@@ -253,29 +255,45 @@ pub fn update_golem_animations(
     }
 }
 
+/// Marker: golem materials have been fixed.
+#[derive(Component)]
+pub struct GolemMaterialFixed;
+
 /// Fix golem materials — the GLB has near-black base_color (0.1, 0.1, 0.1).
+/// Runs on each golem once (uses GolemMaterialFixed marker).
 pub fn fix_golem_materials(
-    golems: Query<&Children, With<Golem>>,
+    mut commands: Commands,
+    golems: Query<(Entity, &Children, Option<&crate::components::ReinforcementSoldier>), (With<Golem>, Without<GolemMaterialFixed>)>,
     children_q: Query<&Children>,
     mesh_q: Query<&MeshMaterial3d<StandardMaterial>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut fixed: Local<bool>,
 ) {
-    if *fixed {
-        return;
-    }
-    for children in &golems {
+    for (golem_entity, children, is_reinforcement) in &golems {
+        let mut found_mesh = false;
+        let color = if is_reinforcement.is_some() {
+            Color::srgb(0.35, 0.5, 0.35) // mossy green for reinforcements
+        } else {
+            Color::srgb(0.55, 0.45, 0.35) // brown for tower golems
+        };
         let mut stack: Vec<Entity> = children.iter().copied().collect();
         while let Some(entity) = stack.pop() {
             if let Ok(mat_handle) = mesh_q.get(entity) {
-                if let Some(material) = materials.get_mut(&mat_handle.0) {
-                    material.base_color = Color::srgb(0.55, 0.45, 0.35);
-                    *fixed = true;
+                if let Some(original) = materials.get(&mat_handle.0) {
+                    // Clone so we don't mutate the shared asset and trigger flicker on other golems
+                    let mut new_mat = original.clone();
+                    new_mat.base_color = color;
+                    new_mat.alpha_mode = AlphaMode::Opaque;
+                    let new_handle = materials.add(new_mat);
+                    commands.entity(entity).insert(MeshMaterial3d(new_handle));
+                    found_mesh = true;
                 }
             }
             if let Ok(grandchildren) = children_q.get(entity) {
                 stack.extend(grandchildren.iter());
             }
+        }
+        if found_mesh {
+            commands.entity(golem_entity).insert(GolemMaterialFixed);
         }
     }
 }
@@ -479,6 +497,9 @@ pub fn golem_melee_attack(
 }
 
 /// Move golems toward their rally point. They stay there and fight from that position.
+/// Y offset to keep golems above ground.
+pub const GOLEM_Y_OFFSET: f32 = 0.8;
+
 pub fn golem_movement(
     mut golems: Query<(&mut Transform, &GolemRallyPoint, &BlockingEnemy), With<Golem>>,
     enemies: Query<&Transform, (With<Enemy>, Without<Golem>)>,
@@ -487,22 +508,28 @@ pub fn golem_movement(
     let speed = 3.0;
 
     for (mut golem_transform, rally, blocking) in &mut golems {
-        // Always move toward rally point
-        let target = rally.0;
-
-        let direction = target - golem_transform.translation;
-        let distance = direction.length();
+        // Move toward rally point on XZ plane, keep Y at offset
+        golem_transform.translation.y = GOLEM_Y_OFFSET;
+        let target_xz = Vec3::new(rally.0.x, GOLEM_Y_OFFSET, rally.0.z);
+        let diff = Vec3::new(
+            target_xz.x - golem_transform.translation.x,
+            0.0,
+            target_xz.z - golem_transform.translation.z,
+        );
+        let distance = diff.length();
 
         if distance > 0.3 {
             let step = speed * time.delta_secs();
             if step >= distance {
-                // Snap to target to avoid oscillation
-                golem_transform.translation = target;
+                golem_transform.translation.x = target_xz.x;
+                golem_transform.translation.z = target_xz.z;
             } else {
-                golem_transform.translation += direction.normalize() * step;
+                let move_dir = diff.normalize() * step;
+                golem_transform.translation.x += move_dir.x;
+                golem_transform.translation.z += move_dir.z;
             }
 
-            let look_dir = direction.normalize();
+            let look_dir = diff.normalize();
             if look_dir.length_squared() > 0.001 {
                 let target_rot =
                     Quat::from_rotation_y(f32::atan2(look_dir.x, look_dir.z));
@@ -549,17 +576,20 @@ pub fn enemies_attack_golem(
 }
 
 /// Despawn dead golems and start a 12s respawn timer on the tower.
+/// Reinforcement soldiers just despawn with no respawn timer.
 pub fn check_golem_death(
     mut commands: Commands,
-    golems: Query<(Entity, &Health, &GolemOwner), With<Golem>>,
+    golems: Query<(Entity, &Health, &GolemOwner, Option<&crate::components::ReinforcementSoldier>), With<Golem>>,
     towers: Query<Option<&GolemRespawnTimer>, With<Tower>>,
 ) {
-    for (entity, health, owner) in &golems {
+    for (entity, health, owner, is_reinforcement) in &golems {
         if health.current <= 0.0 {
-            // Only start timer if tower doesn't already have one
-            if let Ok(existing_timer) = towers.get(owner.0) {
-                if existing_timer.is_none() {
-                    commands.entity(owner.0).insert(GolemRespawnTimer(12.0));
+            // Only start respawn timer for tower-owned golems, not reinforcements
+            if is_reinforcement.is_none() {
+                if let Ok(existing_timer) = towers.get(owner.0) {
+                    if existing_timer.is_none() {
+                        commands.entity(owner.0).insert(GolemRespawnTimer(12.0));
+                    }
                 }
             }
             commands.entity(entity).despawn_recursive();
@@ -568,9 +598,10 @@ pub fn check_golem_death(
 }
 
 /// When an earth tower is sold, despawn its golems too.
+/// Skips reinforcement soldiers (they self-own, not tower-owned).
 pub fn cleanup_orphan_golems(
     mut commands: Commands,
-    golems: Query<(Entity, &GolemOwner), With<Golem>>,
+    golems: Query<(Entity, &GolemOwner), (With<Golem>, Without<crate::components::ReinforcementSoldier>)>,
     towers: Query<Entity, With<Tower>>,
 ) {
     for (golem_entity, owner) in &golems {

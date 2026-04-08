@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::animation::{AnimationTarget, AnimationTargetId};
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages};
 use bevy::render::camera::RenderTarget;
 use std::collections::HashMap;
@@ -19,6 +20,7 @@ pub struct LogbookPreviewTint(pub Color);
 pub struct LogbookPreviewNeedsAnim {
     pub idle_clip: Handle<AnimationClip>,
 }
+
 
 /// Resource storing rendered preview image handles.
 #[derive(Resource, Default)]
@@ -65,10 +67,10 @@ fn enemy_preview_scale(enemy_type: EnemyType) -> f32 {
         EnemyType::Knight => base * 2.0,
         EnemyType::Shaman => base * 2.5,
         EnemyType::Medicus => base * 2.5,
-        EnemyType::Priest => base * 6.0,
-        EnemyType::Legionary => base * 1.5,
+        EnemyType::Priest => base * 2.5,
+        EnemyType::Legionary => base * 2.5,
         EnemyType::Dodo => base * 2.5,
-        EnemyType::Minotaur => 1.2,  // absolute scale, ignore base
+        EnemyType::Minotaur => base * 1.2,
         // Large animals
         EnemyType::Sabertooth | EnemyType::Lion => base * 1.5,
         EnemyType::Mammoth => base * 0.8,
@@ -148,12 +150,6 @@ pub fn setup_logbook_previews(
             EnemyType::WoollyRhino => {
                 // Model renders correctly with no rotation
             }
-            EnemyType::Minotaur => {
-                transform.rotate_x(-std::f32::consts::FRAC_PI_2);
-                transform.rotate_z(std::f32::consts::PI);
-                transform.rotate_y(std::f32::consts::PI);
-                transform.translation.y += 2.5;
-            }
             EnemyType::TRex => {
                 transform.translation.y -= 0.5;
             }
@@ -171,6 +167,17 @@ pub fn setup_logbook_previews(
             EnemyType::Shaman | EnemyType::Caveman | EnemyType::Footman
             | EnemyType::Dragon => {
                 transform.translation.y -= 0.8;
+            }
+            EnemyType::Minotaur => {
+                transform.translation.y += 0.3;
+            }
+            EnemyType::Legionary => {
+                transform.translation.y += 0.3;
+            }
+            EnemyType::Priest | EnemyType::Medicus => {
+                transform.translation.y -= 0.8;
+                // Rotate slightly so face is visible past hands in idle pose
+                transform.rotate_y(0.4);
             }
             EnemyType::Cavalry => {
                 transform.translation.y -= 0.5;
@@ -191,9 +198,13 @@ pub fn setup_logbook_previews(
         }
 
         // Load idle animation for humanoids with external Mixamo anims
+        // Skip minotaur — its non-Mixamo skeleton distorts with shared Mixamo
+        // idle clip; static rest pose looks correct.
         if let Some(anim_files) = stats.anim_files {
-            let idle_clip = asset_server.load(format!("{}#Animation0", anim_files[1]));
-            model_cmds.insert(LogbookPreviewNeedsAnim { idle_clip });
+            if enemy_type != EnemyType::Minotaur {
+                let idle_clip: Handle<AnimationClip> = asset_server.load(format!("{}#Animation0", anim_files[1]));
+                model_cmds.insert(LogbookPreviewNeedsAnim { idle_clip });
+            }
         } else if stats.anim_indices != [255; 4] {
             // Embedded animation — load idle index
             let idle_idx = stats.anim_indices[1];
@@ -398,6 +409,7 @@ pub fn apply_preview_tints(
                 new_mat.base_color_texture = None;
                 new_mat.perceptual_roughness = 1.0;
                 new_mat.metallic = 0.0;
+                new_mat.alpha_mode = AlphaMode::Opaque;
                 new_mat.emissive = LinearRgba::new(r * 0.15, g * 0.15, b * 0.15, 1.0);
 
                 let new_handle = materials.add(new_mat);
@@ -446,41 +458,102 @@ fn hue_to_rgb(p: f32, q: f32, mut t: f32) -> f32 {
 }
 
 /// Starts idle animations on preview models once their AnimationPlayer is ready.
+/// If the model has no embedded AnimationPlayer (e.g. minotaur-mixamo), manually
+/// inserts one on the Armature node with AnimationTargets on all bones — matching
+/// the in-game setup_enemy_animations and showcase_setup_anims approach.
 pub fn start_preview_anims(
     mut commands: Commands,
     preview_q: Query<(Entity, &LogbookPreviewNeedsAnim, &Children)>,
     children_q: Query<&Children>,
     mut players: Query<&mut AnimationPlayer>,
+    names: Query<&Name>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
 ) {
     for (entity, needs_anim, children) in &preview_q {
-        // Walk hierarchy up to 4 levels deep to find AnimationPlayer
-        let mut found_player = false;
-        let mut targets: Vec<Entity> = children.iter().copied().collect();
-        for _depth in 0..4 {
-            let mut next_targets = Vec::new();
-            for &target in &targets {
-                if let Ok(mut player) = players.get_mut(target) {
-                    let mut graph = AnimationGraph::new();
-                    let node = graph.add_clip(needs_anim.idle_clip.clone(), 1.0, graph.root);
-                    let graph_handle = graphs.add(graph);
-                    commands.entity(target).insert((
-                        AnimationGraphHandle(graph_handle),
-                        AnimationTransitions::new(),
-                    ));
-                    player.play(node).repeat();
-                    found_player = true;
-                    break;
-                }
-                if let Ok(gc) = children_q.get(target) {
-                    next_targets.extend(gc.iter().copied());
+        // Walk hierarchy to find existing AnimationPlayer or Armature node
+        let mut stack: Vec<Entity> = children.iter().copied().collect();
+        let mut found_player = None;
+        let mut armature_entity = None;
+
+        while let Some(child) = stack.pop() {
+            if players.get(child).is_ok() {
+                found_player = Some(child);
+                break;
+            }
+            if let Ok(name) = names.get(child) {
+                let n = name.as_str();
+                if n == "Armature" || n.contains("CharacterArmature") {
+                    armature_entity = Some(child);
                 }
             }
-            if found_player { break; }
-            targets = next_targets;
+            if let Ok(gc) = children_q.get(child) {
+                stack.extend(gc.iter().copied());
+            }
         }
-        if found_player {
+
+        // If no AnimationPlayer found, manually create one on the Armature
+        let player_entity = if let Some(pe) = found_player {
+            pe
+        } else if let Some(armature) = armature_entity {
+            commands.entity(armature).insert(AnimationPlayer::default());
+            // Insert AnimationTarget on armature and all bones
+            let armature_name = names.get(armature)
+                .map(|n| n.clone())
+                .unwrap_or_else(|_| Name::new("Armature"));
+            let root_path = vec![armature_name];
+            commands.entity(armature).insert(AnimationTarget {
+                id: AnimationTargetId::from_names(root_path.iter()),
+                player: armature,
+            });
+            if let Ok(arm_children) = children_q.get(armature) {
+                for &child in arm_children.iter() {
+                    insert_preview_anim_targets(
+                        &mut commands, child, armature,
+                        &root_path, &children_q, &names,
+                    );
+                }
+            }
+            armature
+        } else {
+            continue; // Scene not loaded yet
+        };
+
+        if let Some(mut player) = found_player.and_then(|pe| players.get_mut(pe).ok()) {
+            // Existing player — set up graph and play immediately
+            let mut graph = AnimationGraph::new();
+            let node = graph.add_clip(needs_anim.idle_clip.clone(), 1.0, graph.root);
+            let graph_handle = graphs.add(graph);
+            commands.entity(player_entity).insert((
+                AnimationGraphHandle(graph_handle),
+                AnimationTransitions::new(),
+            ));
+            player.play(node).repeat();
             commands.entity(entity).remove::<LogbookPreviewNeedsAnim>();
+        }
+        // else: AnimationPlayer was just inserted via commands — wait for next
+        // frame so it exists and we can call play().
+    }
+}
+
+/// Recursively insert AnimationTarget on bone entities for preview models.
+fn insert_preview_anim_targets(
+    commands: &mut Commands,
+    entity: Entity,
+    player: Entity,
+    parent_path: &[Name],
+    children_q: &Query<&Children>,
+    names: &Query<&Name>,
+) {
+    let name = names.get(entity)
+        .map(|n| n.clone())
+        .unwrap_or_else(|_| Name::new(format!("bone_{}", entity.index())));
+    let mut path = parent_path.to_vec();
+    path.push(name);
+    let id = AnimationTargetId::from_names(path.iter());
+    commands.entity(entity).insert(AnimationTarget { id, player });
+    if let Ok(children) = children_q.get(entity) {
+        for &child in children.iter() {
+            insert_preview_anim_targets(commands, child, player, &path, children_q, names);
         }
     }
 }

@@ -551,13 +551,16 @@ pub fn block_enemies(
         if flying.is_some() { continue; }
 
         // Check if in range of any blocker (XZ distance to ignore Y offsets)
+        // Use hysteresis: smaller range to enter blocked state, larger to exit
         let enemy_xz = Vec3::new(transform.translation.x, 0.0, transform.translation.z);
+        let already_blocked = was_blocked.is_some();
+        let hysteresis = if already_blocked { 1.5 } else { 0.0 }; // stay blocked longer
         let in_range = blockers.iter().any(|(pos, range)| {
             let blocker_xz = Vec3::new(pos.x, 0.0, pos.z);
-            blocker_xz.distance(enemy_xz) <= *range
+            blocker_xz.distance(enemy_xz) <= *range + hysteresis
         });
 
-        if in_range && was_blocked.is_none() {
+        if in_range && !already_blocked {
             // Newly blocked — apply random spread offset
             let angle = (entity.index() as f32 * 2.3571) % (std::f32::consts::PI * 2.0);
             let dist = 0.3 + ((entity.index() as f32 * 1.7321) % 0.5);
@@ -565,7 +568,7 @@ pub fn block_enemies(
             transform.translation.x += offset.x;
             transform.translation.z += offset.z;
             commands.entity(entity).insert((GolemBlocked, BlockOffset(offset)));
-        } else if !in_range && was_blocked.is_some() {
+        } else if !in_range && already_blocked {
             // Unblocked — remove offset and GolemBlocked
             if let Some(offset) = block_offset {
                 transform.translation.x -= offset.0.x;

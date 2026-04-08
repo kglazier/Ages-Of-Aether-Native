@@ -151,6 +151,7 @@ impl Plugin for GamePlugin {
                 enemy_anim::rock_single_clip_enemies.in_set(GameSet::Visual),
                 wave::apply_enemy_model_rotation.in_set(GameSet::Spawning),
                 combat::fix_blend_enemy_materials.in_set(GameSet::Spawning),
+                // combat::enforce_opaque_enemies removed — was causing flicker via change detection
             ),
         );
         // Hero systems (separate call due to Bevy tuple size limit)
@@ -220,12 +221,16 @@ impl Plugin for GamePlugin {
                 player_ability::tick_player_ability_cooldowns.in_set(GameSet::Combat),
                 player_ability::execute_player_ability.in_set(GameSet::Combat),
                 player_ability::tick_reinforcements.in_set(GameSet::Combat),
+                player_ability::animate_meteor_falling.in_set(GameSet::Visual),
+                player_ability::tick_timed_despawns.in_set(GameSet::Cleanup),
+                player_ability::update_targeting_ring.in_set(GameSet::Visual),
                 combat::init_damage_tracking.in_set(GameSet::Spawning),
                 combat::spawn_damage_numbers.in_set(GameSet::Visual),
                 combat::tick_damage_numbers.in_set(GameSet::Visual),
                 combat::animate_damage_numbers.in_set(GameSet::Visual),
                 animate_placement_bounce.in_set(GameSet::Visual),
                 animate_upgrade_flash.in_set(GameSet::Visual),
+                animate_orbiting_indicators.in_set(GameSet::Visual),
                 setup::animate_lava.in_set(GameSet::Visual),
             ),
         );
@@ -292,20 +297,36 @@ pub enum GameSet {
 }
 
 /// Spawns small star-like indicators above upgraded towers.
+/// Composite key: (level, specialized, spec_level) to detect changes.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+struct IndicatorState(u8, bool, u8);
+
 fn update_upgrade_indicators(
     mut commands: Commands,
-    towers: Query<(Entity, &Transform, &crate::components::TowerLevel, &crate::components::Element), With<crate::components::Tower>>,
+    towers: Query<(
+        Entity,
+        &Transform,
+        &crate::components::TowerLevel,
+        &crate::components::Element,
+        Option<&crate::components::TowerSpec>,
+        Option<&crate::components::SpecLevel>,
+    ), With<crate::components::Tower>>,
     existing: Query<(Entity, &crate::components::UpgradeIndicator)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
-    mut tracked: Local<std::collections::HashMap<Entity, u8>>,
+    mut tracked: Local<std::collections::HashMap<Entity, IndicatorState>>,
 ) {
-    for (tower_entity, tower_transform, level, element) in &towers {
-        let prev = tracked.get(&tower_entity).copied().unwrap_or(255);
-        if prev == level.0 {
+    for (tower_entity, tower_transform, level, element, spec, spec_level) in &towers {
+        let current = IndicatorState(
+            level.0,
+            spec.is_some(),
+            spec_level.map(|s| s.0).unwrap_or(0),
+        );
+        let prev = tracked.get(&tower_entity).copied();
+        if prev == Some(current) {
             continue;
         }
-        tracked.insert(tower_entity, level.0);
+        tracked.insert(tower_entity, current);
 
         // Remove old indicators for this tower
         for (ind_entity, ind) in &existing {
@@ -314,25 +335,113 @@ fn update_upgrade_indicators(
             }
         }
 
-        // Spawn level indicators (small spheres) — 1 per level above 0
-        if level.0 > 0 {
-            let color = crate::data::element_color(*element);
-            let emissive = crate::data::element_emissive(*element);
-            for i in 0..level.0 {
-                let offset_x = (i as f32 - (level.0 as f32 - 1.0) / 2.0) * 0.4;
+        let color = crate::data::element_color(*element);
+        let emissive = crate::data::element_emissive(*element);
+        let pos = tower_transform.translation;
+        let indicator = crate::components::UpgradeIndicator { tower: tower_entity };
+        let world = crate::components::GameWorldEntity;
+
+        let glow_mat = materials.add(StandardMaterial {
+            base_color: color,
+            emissive,
+            unlit: true,
+            ..default()
+        });
+        let ring_mat = materials.add(StandardMaterial {
+            base_color: color.with_alpha(0.4),
+            emissive: emissive * 0.4,
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            double_sided: true,
+            ..default()
+        });
+
+        // --- Level 1: single upward cone (pennant) ---
+        if level.0 == 1 {
+            commands.spawn((
+                Mesh3d(meshes.add(Cone { radius: 0.15, height: 0.5 })),
+                MeshMaterial3d(glow_mat.clone()),
+                Transform::from_translation(pos + Vec3::new(0.0, 3.2, 0.0)),
+                indicator.clone(),
+                world,
+            ));
+        }
+
+        // --- Level 2 (not specialized): two cones + ground ring ---
+        if level.0 >= 2 && !current.1 {
+            // Twin cones flanking the tower
+            for side in [-0.4_f32, 0.4] {
                 commands.spawn((
-                    Mesh3d(meshes.add(Sphere::new(0.12))),
-                    MeshMaterial3d(materials.add(StandardMaterial {
-                        base_color: color,
-                        emissive,
-                        unlit: true,
-                        ..default()
-                    })),
-                    Transform::from_translation(
-                        tower_transform.translation + Vec3::new(offset_x, 3.0, 0.0),
-                    ),
-                    crate::components::UpgradeIndicator { tower: tower_entity },
-                    crate::components::GameWorldEntity,
+                    Mesh3d(meshes.add(Cone { radius: 0.18, height: 0.6 })),
+                    MeshMaterial3d(glow_mat.clone()),
+                    Transform::from_translation(pos + Vec3::new(side, 3.4, 0.0)),
+                    indicator.clone(),
+                    world,
+                ));
+            }
+            // Ground ring
+            commands.spawn((
+                Mesh3d(meshes.add(Annulus::new(1.1, 1.25))),
+                MeshMaterial3d(ring_mat.clone()),
+                Transform::from_translation(pos + Vec3::new(0.0, 0.05, 0.0))
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+                indicator.clone(),
+                world,
+            ));
+        }
+
+        // --- Specialized: element-specific crown shape + ground ring + orbiting particles ---
+        if let Some(sl) = spec_level {
+            // Ground ring (wider for specs)
+            commands.spawn((
+                Mesh3d(meshes.add(Annulus::new(1.3, 1.5))),
+                MeshMaterial3d(ring_mat.clone()),
+                Transform::from_translation(pos + Vec3::new(0.0, 0.05, 0.0))
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
+                indicator.clone(),
+                world,
+            ));
+
+            // Element-specific crown shape above tower
+            use crate::components::Element as Elem;
+            let crown_mesh: Mesh = match *element {
+                Elem::Lightning => Cylinder::new(0.12, 0.8).into(),   // tall rod
+                Elem::Earth => Cuboid::new(0.4, 0.4, 0.4).into(),    // solid cube
+                Elem::Ice => Sphere::new(0.25).into(),                // crystal
+                Elem::Fire => Cone { radius: 0.25, height: 0.7 }.into(), // flame point
+            };
+            let crown_scale = match *element {
+                Elem::Ice => Vec3::new(0.8, 1.5, 0.8), // stretch into crystal
+                _ => Vec3::ONE,
+            };
+            commands.spawn((
+                Mesh3d(meshes.add(crown_mesh)),
+                MeshMaterial3d(glow_mat.clone()),
+                Transform::from_translation(pos + Vec3::new(0.0, 3.6, 0.0))
+                    .with_scale(crown_scale),
+                indicator.clone(),
+                world,
+            ));
+
+            // Orbiting particles (1 per spec level)
+            for i in 0..sl.0 {
+                let angle = (i as f32 / sl.0 as f32) * std::f32::consts::TAU;
+                let orbit_r = 1.5;
+                let ox = angle.cos() * orbit_r;
+                let oz = angle.sin() * orbit_r;
+                commands.spawn((
+                    Mesh3d(meshes.add(Sphere::new(0.08))),
+                    MeshMaterial3d(glow_mat.clone()),
+                    Transform::from_translation(pos + Vec3::new(ox, 2.5, oz)),
+                    indicator.clone(),
+                    world,
+                    crate::components::OrbitingIndicator {
+                        center: pos,
+                        radius: orbit_r,
+                        height: 2.5,
+                        speed: 1.5,
+                        offset: angle,
+                    },
                 ));
             }
         }
@@ -431,5 +540,19 @@ fn animate_upgrade_flash(
             }
             commands.entity(entity).remove::<crate::components::UpgradeFlash>();
         }
+    }
+}
+
+/// Animate orbiting spec-level indicators around their tower.
+fn animate_orbiting_indicators(
+    mut orbiters: Query<(&mut Transform, &crate::components::OrbitingIndicator)>,
+    time: Res<Time>,
+) {
+    let t = time.elapsed_secs();
+    for (mut transform, orbit) in &mut orbiters {
+        let angle = orbit.offset + t * orbit.speed;
+        transform.translation.x = orbit.center.x + angle.cos() * orbit.radius;
+        transform.translation.z = orbit.center.z + angle.sin() * orbit.radius;
+        transform.translation.y = orbit.center.y + orbit.height + (t * 2.0 + orbit.offset).sin() * 0.15;
     }
 }
