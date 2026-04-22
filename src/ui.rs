@@ -2022,8 +2022,13 @@ fn handle_confirm_dialog(
     mut needs_setup: ResMut<crate::resources::NeedsFreshSetup>,
     mut hero_cmd: ResMut<crate::resources::HeroMoveCommand>,
     game_entities: Query<Entity, With<crate::components::GameWorldEntity>>,
-    hud_q: Query<Entity, With<HudRoot>>,
-    hero_hud_q: Query<Entity, With<HeroHudRoot>>,
+    gameplay_ui: Query<Entity, Or<(
+        With<HudRoot>,
+        With<HeroHudRoot>,
+        With<TowerPanelRoot>,
+        With<BuildMenuRoot>,
+        With<RallyPointPrompt>,
+    )>>,
     mut debug_state: Option<ResMut<crate::systems::debug::DebugState>>,
 ) {
     for interaction in &yes_q {
@@ -2045,14 +2050,14 @@ fn handle_confirm_dialog(
                     next_state.set(AppState::WaitingForWindow);
                 }
                 PendingConfirm::Quit => {
-                    // Manually clean up game world + HUD since we're not re-entering Playing
+                    // Manually clean up game world + all gameplay UI since we're not
+                    // re-entering Playing. Selection-driven panels (tower info, build
+                    // menu, rally prompt) aren't tied to GameWorldEntity, so they get
+                    // bundled into the same Or<> query as the HUD roots.
                     for entity in &game_entities {
                         commands.entity(entity).despawn_recursive();
                     }
-                    for entity in &hud_q {
-                        commands.entity(entity).despawn_recursive();
-                    }
-                    for entity in &hero_hud_q {
+                    for entity in &gameplay_ui {
                         commands.entity(entity).despawn_recursive();
                     }
                     // Close debug overlay if open
