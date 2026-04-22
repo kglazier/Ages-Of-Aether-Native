@@ -165,12 +165,12 @@ pub fn move_projectiles(
                     }
                     let dist = target_pos.distance(etransform.translation);
                     if dist <= splash.0 {
-                        let reduced = apply_damage_reduction(damage * 0.5, element, &armor);
+                        let reduced = apply_damage_reduction(damage * 0.35, element, &armor);
                         health.current -= reduced;
 
                         // Synergy on splash targets too
                         if slow.is_some() && element == Element::Fire {
-                            health.current -= damage * 0.5 * 0.4;
+                            health.current -= damage * 0.35 * 0.4;
                         }
                     }
                 }
@@ -519,8 +519,8 @@ pub fn golem_elemental_synergy(
                     .any(|tp| golem_pos.distance(*tp) <= SYNERGY_RADIUS);
                 if golem_near_fire {
                     commands.entity(enemy_entity).insert(BurnDebuff {
-                        dps: 2.0,
-                        remaining: 1.5,
+                        dps: 1.0,
+                        remaining: 1.0,
                     });
                 }
             }
@@ -538,6 +538,7 @@ pub fn update_range_indicator(
     indicators: Query<Entity, With<RangeIndicator>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
+    current_level: Res<crate::resources::CurrentLevel>,
 ) {
     // Always despawn old indicators
     for entity in &indicators {
@@ -554,6 +555,13 @@ pub fn update_range_indicator(
         return;
     };
 
+    // Frozen tundra (levels 5/6) has a near-white background — invert the ring
+    // so it stays visible. Other themes use the default white ring.
+    let ring_color = match current_level.0 {
+        5 | 6 => Color::srgba(0.05, 0.1, 0.25, 0.55),
+        _ => Color::srgba(1.0, 1.0, 1.0, 0.25),
+    };
+
     // Spawn a thin ring using an annulus (flat ring shape)
     let pos = tower_transform.translation;
     let inner = range.0 - 0.05;
@@ -561,7 +569,7 @@ pub fn update_range_indicator(
     commands.spawn((
         Mesh3d(meshes.add(Annulus::new(inner, outer))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgba(1.0, 1.0, 1.0, 0.25),
+            base_color: ring_color,
             alpha_mode: AlphaMode::Blend,
             unlit: true,
             double_sided: true,
@@ -744,40 +752,6 @@ pub fn fix_blend_enemy_materials(
         }
         if mesh_count >= 1 {
             commands.entity(entity).remove::<NeedsBlendFix>();
-        }
-    }
-}
-
-/// Periodic sweep: force ALL enemy and golem materials to Opaque to prevent
-/// transparency glitches when enemies cluster near golems.
-/// Uses read-only check first to avoid triggering Bevy change detection unnecessarily.
-pub fn enforce_opaque_enemies(
-    enemy_q: Query<&Children, Or<(With<Enemy>, With<Golem>)>>,
-    children_q: Query<&Children>,
-    mesh_q: Query<&MeshMaterial3d<StandardMaterial>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
-) {
-    // First pass: collect handles that need fixing (read-only)
-    let mut to_fix: Vec<Handle<StandardMaterial>> = Vec::new();
-    for children in &enemy_q {
-        let mut stack: Vec<Entity> = children.iter().copied().collect();
-        while let Some(child) = stack.pop() {
-            if let Ok(mat_handle) = mesh_q.get(child) {
-                if let Some(mat) = materials.get(&mat_handle.0) {
-                    if mat.alpha_mode != AlphaMode::Opaque {
-                        to_fix.push(mat_handle.0.clone());
-                    }
-                }
-            }
-            if let Ok(grandchildren) = children_q.get(child) {
-                stack.extend(grandchildren.iter());
-            }
-        }
-    }
-    // Second pass: only mutate the ones that actually need it
-    for handle in &to_fix {
-        if let Some(mat) = materials.get_mut(handle) {
-            mat.alpha_mode = AlphaMode::Opaque;
         }
     }
 }

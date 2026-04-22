@@ -134,15 +134,16 @@ pub fn execute_ability(
                     }
                 }
             }
+            // Always show VFX so the button feels responsive even when no enemy is in range.
+            spawn_ability_vfx(&mut commands, &mut meshes, &mut materials, hero_pos, 1.5, def.color);
             if let Some((target, _)) = best {
                 if let Ok((_, _, mut health, armor)) = enemies.get_mut(target) {
                     let total_damage = hero_dmg.0 * multiplier;
                     let reduction = armor.physical / (armor.physical + 100.0);
                     health.current -= total_damage * (1.0 - reduction);
                 }
-                spawn_ability_vfx(&mut commands, &mut meshes, &mut materials, hero_pos, 1.5, def.color);
             } else {
-                // No target — refund cooldown
+                // No target — refund cooldown so the player can try again immediately.
                 abilities.cooldowns[idx] = 0.0;
             }
         }

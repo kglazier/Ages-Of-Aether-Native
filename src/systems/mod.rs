@@ -152,6 +152,8 @@ impl Plugin for GamePlugin {
                 wave::apply_enemy_model_rotation.in_set(GameSet::Spawning),
                 combat::fix_blend_enemy_materials.in_set(GameSet::Spawning),
                 // combat::enforce_opaque_enemies removed — was causing flicker via change detection
+                golem::spawn_golem_visuals.in_set(GameSet::Spawning),
+                golem::update_golem_visuals.in_set(GameSet::Visual),
             ),
         );
         // Hero systems (separate call due to Bevy tuple size limit)
@@ -242,7 +244,9 @@ impl Plugin for GamePlugin {
                 audio::play_death_sfx,
                 audio::play_tower_attack_sfx,
                 audio::play_wave_sfx,
-                audio::pause_audio_on_focus,
+                debug::admin_unlock_tap,
+                debug::sync_admin_ui_visibility,
+                debug::handle_admin_turn_off,
                 debug::debug_hotkeys,
                 debug::manage_debug_overlay,
                 debug::update_debug_overlay,
@@ -251,6 +255,9 @@ impl Plugin for GamePlugin {
             )
                 .run_if(in_state(AppState::Playing)),
         );
+
+        // Focus-based audio pause runs in every state so minimizing always silences music.
+        app.add_systems(Update, audio::pause_audio_on_focus);
 
         // Music volume sync runs in both Playing and Paused so slider changes take effect immediately
         app.add_systems(

@@ -8,6 +8,11 @@ pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
+        app.init_resource::<UiFont>();
+        app.init_resource::<MenuOrbTexture>();
+        app.add_systems(Startup, (load_ui_font, init_menu_orb_texture));
+        app.add_systems(Update, (ensure_menu_orbs, update_menu_orbs).run_if(in_menu_state));
+        app.add_systems(OnEnter(AppState::Playing), despawn_menu_orbs);
         app.add_systems(
             OnEnter(AppState::Playing),
             setup_hud.run_if(|needs: Res<crate::resources::NeedsFreshSetup>| needs.0),
@@ -83,25 +88,48 @@ impl Plugin for UiPlugin {
 
         // Main menu
         app.add_systems(OnEnter(AppState::MainMenu), setup_main_menu);
-        app.add_systems(Update, handle_main_menu.run_if(in_state(AppState::MainMenu)));
+        app.add_systems(Update, (
+            handle_main_menu,
+            crate::systems::debug::admin_unlock_tap,
+            crate::systems::debug::sync_admin_ui_visibility,
+            crate::systems::debug::handle_admin_turn_off,
+        ).run_if(in_state(AppState::MainMenu)));
         app.add_systems(OnExit(AppState::MainMenu), cleanup_menu_screen);
 
         // Level select
+        app.init_resource::<LevelSelectScrollOffset>();
         app.add_systems(OnEnter(AppState::LevelSelect), (
             setup_level_select,
             crate::systems::setup::cleanup_game_world,
+            reset_level_select_scroll,
         ));
-        app.add_systems(Update, (handle_level_select, handle_admin_panel).run_if(in_state(AppState::LevelSelect)));
+        app.add_systems(Update, (
+            handle_level_select,
+            handle_admin_panel,
+            level_select_scroll,
+            handle_difficulty_buttons,
+            update_difficulty_buttons,
+            crate::systems::debug::admin_unlock_tap,
+            crate::systems::debug::sync_admin_ui_visibility,
+            crate::systems::debug::handle_admin_turn_off,
+        ).run_if(in_state(AppState::LevelSelect)));
         app.add_systems(OnExit(AppState::LevelSelect), (cleanup_menu_screen, cleanup_admin_panel));
 
         // Hero select
         app.add_systems(OnEnter(AppState::HeroSelect), setup_hero_select);
-        app.add_systems(Update, (handle_hero_select, handle_admin_panel).run_if(in_state(AppState::HeroSelect)));
+        app.add_systems(Update, (
+            handle_hero_select,
+            handle_admin_panel,
+            crate::systems::debug::admin_unlock_tap,
+            crate::systems::debug::sync_admin_ui_visibility,
+            crate::systems::debug::handle_admin_turn_off,
+        ).run_if(in_state(AppState::HeroSelect)));
         app.add_systems(OnExit(AppState::HeroSelect), (cleanup_menu_screen, cleanup_hero_preview, cleanup_admin_panel));
 
         // Upgrade Shop
-        app.add_systems(OnEnter(AppState::UpgradeShop), setup_upgrade_shop);
-        app.add_systems(Update, handle_upgrade_shop.run_if(in_state(AppState::UpgradeShop)));
+        app.init_resource::<UpgradeShopScrollOffset>();
+        app.add_systems(OnEnter(AppState::UpgradeShop), (setup_upgrade_shop, reset_upgrade_shop_scroll));
+        app.add_systems(Update, (handle_upgrade_shop, upgrade_shop_scroll).run_if(in_state(AppState::UpgradeShop)));
         app.add_systems(OnExit(AppState::UpgradeShop), cleanup_menu_screen);
 
         // Logbook
@@ -224,12 +252,12 @@ enum MenuAction {
     ModelDebug,
     SelectLevel(u32),
     SelectHero(crate::data::HeroType),
+    SelectNoHero,
     BackToMenu,
     BackToLevelSelect,
     StartGame,
     LogbookEnemies,
     LogbookTowers,
-    LogbookBack,
     BuyUpgrade(crate::data::UpgradeKind),
     Credits,
 }
@@ -241,6 +269,16 @@ struct LogbookPageContainer;
 struct LogbookScrollContent;
 #[derive(Resource, Default)]
 struct LogbookScrollOffset(f32);
+#[derive(Component)]
+struct LevelSelectScrollContent;
+#[derive(Resource, Default)]
+struct LevelSelectScrollOffset(f32);
+#[derive(Component)]
+struct DifficultyButton(crate::resources::Difficulty);
+#[derive(Component)]
+struct UpgradeShopScrollContent;
+#[derive(Resource, Default)]
+struct UpgradeShopScrollOffset(f32);
 #[derive(Component)]
 struct HeroPreviewRoot;
 #[derive(Component)]
@@ -256,15 +294,184 @@ struct PlayerAbilityButton(crate::data::PlayerAbilityType);
 #[derive(Component)]
 struct PlayerAbilityCooldownText(crate::data::PlayerAbilityType);
 
+/// Font Awesome Free Solid TTF for HUD icons. Drop fa-solid.ttf in
+/// assets/fonts/icons.ttf. If absent, icons fall back to default font (mojibake).
+#[derive(Resource, Default)]
+pub struct UiFont(pub Handle<Font>);
+
+fn load_ui_font(asset_server: Res<AssetServer>, mut ui_font: ResMut<UiFont>) {
+    ui_font.0 = asset_server.load("fonts/icons.otf");
+}
+
+// ---------------------------------------------------------------------------
+// Menu backdrop — floating orbs that drift up across non-gameplay screens
+// ---------------------------------------------------------------------------
+
+#[derive(Component)]
+struct MenuOrbsRoot;
+
+#[derive(Component)]
+struct MenuOrb { vy: f32 }
+
+#[derive(Resource, Default)]
+struct MenuOrbTexture(Handle<Image>);
+
+const ORB_COUNT: usize = 28;
+
+/// Builds a single 128x128 RGBA image with a smooth radial alpha falloff,
+/// tight bright center and long soft tail. Tinted per-orb via ImageNode color.
+fn init_menu_orb_texture(mut images: ResMut<Assets<Image>>, mut tex: ResMut<MenuOrbTexture>) {
+    use bevy::render::render_asset::RenderAssetUsages;
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
+    let size: u32 = 128;
+    let radius = size as f32 * 0.5;
+    let mut data = Vec::with_capacity((size * size * 4) as usize);
+    for y in 0..size {
+        for x in 0..size {
+            let dx = x as f32 - radius + 0.5;
+            let dy = y as f32 - radius + 0.5;
+            let d = (dx * dx + dy * dy).sqrt() / radius;
+            let t = (1.0 - d.min(1.0)).max(0.0);
+            // Tight bright core + long soft tail. Mix of cubic (tail) and high-power (core spike).
+            let alpha = 0.65 * t.powf(3.0) + 0.35 * t.powf(8.0);
+            let a = (alpha.clamp(0.0, 1.0) * 255.0) as u8;
+            data.extend_from_slice(&[255, 255, 255, a]);
+        }
+    }
+    let img = Image::new(
+        Extent3d { width: size, height: size, depth_or_array_layers: 1 },
+        TextureDimension::D2,
+        data,
+        TextureFormat::Rgba8UnormSrgb,
+        RenderAssetUsages::RENDER_WORLD,
+    );
+    tex.0 = images.add(img);
+}
+
+fn in_menu_state(state: Res<State<AppState>>) -> bool {
+    matches!(state.get(),
+        AppState::MainMenu | AppState::LevelSelect | AppState::HeroSelect
+        | AppState::Logbook | AppState::UpgradeShop | AppState::Credits
+        | AppState::GameOver)
+}
+
+fn ensure_menu_orbs(
+    mut commands: Commands,
+    existing: Query<(), With<MenuOrbsRoot>>,
+    windows: Query<&Window>,
+    orb_tex: Res<MenuOrbTexture>,
+) {
+    use rand::Rng;
+    if !existing.is_empty() { return; }
+    let Ok(win) = windows.get_single() else { return };
+    let w = win.width().max(1.0);
+    let h = win.height().max(1.0);
+
+    let palette: &[(f32, f32, f32)] = &[
+        (1.0, 0.55, 0.20), // ember
+        (1.0, 0.85, 0.30), // gold
+        (0.35, 0.75, 1.0), // sky
+        (0.5, 1.0, 0.6),   // jade
+        (1.0, 0.35, 0.45), // ruby
+        (0.75, 0.5, 1.0),  // amethyst
+    ];
+    let mut rng = rand::thread_rng();
+
+    commands.spawn((
+        MenuOrbsRoot,
+        Node {
+            position_type: PositionType::Absolute,
+            width: Val::Percent(100.0),
+            height: Val::Percent(100.0),
+            ..default()
+        },
+        GlobalZIndex(-100),
+    )).with_children(|parent| {
+        for _ in 0..ORB_COUNT {
+            // Halo size — the bright core inside is ~25% of this.
+            let size: f32 = rng.gen_range(40.0..130.0);
+            let x: f32 = rng.gen_range(0.0..w);
+            let y: f32 = rng.gen_range(0.0..h);
+            let vy: f32 = -rng.gen_range(12.0..38.0);
+            let (r, g, b) = palette[rng.gen_range(0..palette.len())];
+            let intensity: f32 = rng.gen_range(0.55..0.85);
+
+            parent.spawn((
+                MenuOrb { vy },
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(x - size * 0.5),
+                    top: Val::Px(y - size * 0.5),
+                    width: Val::Px(size),
+                    height: Val::Px(size),
+                    ..default()
+                },
+                ImageNode::new(orb_tex.0.clone()).with_color(Color::srgba(r, g, b, intensity)),
+            ));
+        }
+    });
+}
+
+fn update_menu_orbs(
+    time: Res<Time>,
+    mut orbs: Query<(&MenuOrb, &mut Node)>,
+    windows: Query<&Window>,
+) {
+    use rand::Rng;
+    let Ok(win) = windows.get_single() else { return };
+    let w = win.width().max(1.0);
+    let h = win.height().max(1.0);
+    let dt = time.delta_secs();
+    let mut rng = rand::thread_rng();
+
+    for (orb, mut node) in &mut orbs {
+        let cur = match node.top { Val::Px(v) => v, _ => continue };
+        let next = cur + orb.vy * dt;
+        if next < -50.0 {
+            node.top = Val::Px(h + 20.0);
+            node.left = Val::Px(rng.gen_range(0.0..w));
+        } else {
+            node.top = Val::Px(next);
+        }
+    }
+}
+
+fn despawn_menu_orbs(mut commands: Commands, roots: Query<Entity, With<MenuOrbsRoot>>) {
+    for e in &roots { commands.entity(e).despawn_recursive(); }
+}
+
+/// FA Free Solid codepoints — render as icons when the icon font is loaded.
+fn ability_glyph(name: &str) -> &'static str {
+    match name {
+        "Holy Strike" => "\u{f005}",       // star
+        "Divine Blessing" => "\u{f004}",   // heart
+        "Sacred Ground" => "\u{f111}",     // circle
+        "Ground Slam" => "\u{f0e7}",       // bolt
+        "Frost Armor" => "\u{f3ed}",       // shield-halved
+        "Frost Nova" => "\u{f2dc}",        // snowflake
+        "Blade Fury" => "\u{f0e7}",        // bolt (fast strike)
+        "Whirlwind" => "\u{f72e}",         // wind
+        "Execute" => "\u{f54c}",           // skull
+        "Sandstorm" => "\u{f72e}",         // wind
+        "Sun's Wrath" => "\u{f185}",       // sun
+        "Blessing of Ra" => "\u{f185}",    // sun
+        "Fireball" => "\u{f111}",          // circle (fireball orb)
+        "Flame Wave" => "\u{f72e}",        // wind (wave/sweep)
+        "Inferno" => "\u{f06d}",           // fire (the big one)
+        _ => "?",
+    }
+}
+
 // ---------------------------------------------------------------------------
 // HUD setup & update
 // ---------------------------------------------------------------------------
 
-fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>) {
+fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>, ui_font: Res<UiFont>) {
     // Clean up old HUD if restarting
     for entity in &old_huds {
         commands.entity(entity).despawn_recursive();
     }
+    let icon = ui_font.0.clone();
 
     commands
         .spawn((
@@ -278,20 +485,52 @@ fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>) {
             },
         ))
         .with_children(|parent| {
+            // Gold: coin icon + number (also serves as the in-game admin unlock tap target)
             parent.spawn((
-                Text::new("Gold: 220"),
-                TextFont { font_size: 28.0, ..default() },
-                TextColor(Color::srgb(1.0, 0.85, 0.0)),
-                GoldText,
-            ));
+                Button,
+                crate::systems::debug::AdminUnlockTap,
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(6.0),
+                    ..default()
+                },
+            )).with_children(|row| {
+                row.spawn((
+                    Text::new("\u{f51e}"),
+                    TextFont { font: icon.clone(), font_size: 24.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                ));
+                row.spawn((
+                    Text::new("220"),
+                    TextFont { font_size: 28.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.85, 0.0)),
+                    GoldText,
+                ));
+            });
+            // Lives: heart icon + number
             parent.spawn((
-                Text::new("Lives: 20"),
-                TextFont { font_size: 28.0, ..default() },
-                TextColor(Color::srgb(1.0, 0.3, 0.3)),
-                LivesText,
-            ));
+                Node {
+                    flex_direction: FlexDirection::Row,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(6.0),
+                    ..default()
+                },
+            )).with_children(|row| {
+                row.spawn((
+                    Text::new("\u{f004}"),
+                    TextFont { font: icon.clone(), font_size: 24.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.3, 0.3)),
+                ));
+                row.spawn((
+                    Text::new("20"),
+                    TextFont { font_size: 28.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.3, 0.3)),
+                    LivesText,
+                ));
+            });
             parent.spawn((
-                Text::new("Wave: 0/10"),
+                Text::new("0/10"),
                 TextFont { font_size: 28.0, ..default() },
                 TextColor(Color::WHITE),
                 WaveText,
@@ -387,16 +626,18 @@ fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>) {
                         TextColor(Color::WHITE),
                     ));
                 });
-            // Debug toggle button
+            // Debug toggle button (hidden until admin mode activated)
             parent
                 .spawn((
                     Button,
                     crate::systems::debug::DebugToggleButton,
+                    crate::systems::debug::AdminOnlyUI,
                     Node {
                         height: Val::Px(44.0),
                         padding: UiRect::horizontal(Val::Px(8.0)),
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
+                        display: Display::None,
                         ..default()
                     },
                     BackgroundColor(Color::srgba(0.0, 0.3, 0.0, 0.5)),
@@ -427,8 +668,8 @@ fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>) {
                 ))
                 .with_children(|btn| {
                     btn.spawn((
-                        Text::new("Meteor"),
-                        TextFont { font_size: 16.0, ..default() },
+                        Text::new("\u{f06d}"), // FA fire
+                        TextFont { font: icon.clone(), font_size: 24.0, ..default() },
                         TextColor(Color::srgb(1.0, 0.6, 0.2)),
                     ));
                     btn.spawn((
@@ -456,8 +697,8 @@ fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>) {
                 ))
                 .with_children(|btn| {
                     btn.spawn((
-                        Text::new("Reinforce"),
-                        TextFont { font_size: 16.0, ..default() },
+                        Text::new("\u{f0c0}"), // FA users
+                        TextFont { font: icon.clone(), font_size: 24.0, ..default() },
                         TextColor(Color::srgb(0.4, 0.9, 0.4)),
                     ));
                     btn.spawn((
@@ -472,28 +713,19 @@ fn setup_hud(mut commands: Commands, old_huds: Query<Entity, With<HudRoot>>) {
 
 fn update_hud(
     game: Res<GameData>,
-    wave: Res<WaveState>,
     mut gold_q: Query<&mut Text, (With<GoldText>, Without<LivesText>, Without<WaveText>)>,
     mut lives_q: Query<&mut Text, (With<LivesText>, Without<GoldText>, Without<WaveText>)>,
     mut wave_q: Query<&mut Text, (With<WaveText>, Without<GoldText>, Without<LivesText>)>,
 ) {
     if let Ok(mut t) = gold_q.get_single_mut() {
-        t.0 = format!("Gold: {}", game.gold);
+        t.0 = format!("{}", game.gold);
     }
     if let Ok(mut t) = lives_q.get_single_mut() {
-        t.0 = format!("Lives: {}", game.lives);
+        t.0 = format!("{}", game.lives);
     }
     if let Ok(mut t) = wave_q.get_single_mut() {
-        let status = match wave.phase {
-            WavePhase::Idle if game.wave_number >= game.max_waves => "[Complete!]",
-            WavePhase::Idle => "[Ready]",
-            WavePhase::Spawning => "[Spawning...]",
-            WavePhase::PulsePause => "[Next pulse...]",
-            WavePhase::Active if game.wave_number + 1 < game.max_waves => "[Call Early]",
-            WavePhase::Active => "[Active]",
-        };
         let display_wave = (game.wave_number + 1).min(game.max_waves);
-        t.0 = format!("Wave: {}/{}  {}", display_wave, game.max_waves, status);
+        t.0 = format!("{}/{}", display_wave, game.max_waves);
     }
 }
 
@@ -2104,13 +2336,17 @@ fn setup_hero_hud(
     mut commands: Commands,
     old: Query<Entity, With<HeroHudRoot>>,
     active_hero: Res<ActiveHeroType>,
+    ui_font: Res<UiFont>,
+    no_hero: Res<crate::resources::NoHeroSelected>,
 ) {
     for entity in &old {
         commands.entity(entity).despawn_recursive();
     }
+    if no_hero.0 { return; }
 
     let defs = crate::data::hero_abilities(active_hero.0);
     let stats = crate::data::hero_stats(active_hero.0);
+    let icon = ui_font.0.clone();
 
     commands
         .spawn((
@@ -2188,10 +2424,9 @@ fn setup_hero_hud(
                             BorderRadius::all(Val::Px(4.0)),
                         ))
                         .with_children(|btn| {
-                            // Ability name
                             btn.spawn((
-                                Text::new(def.name),
-                                TextFont { font_size: 8.0, ..default() },
+                                Text::new(ability_glyph(def.name)),
+                                TextFont { font: icon.clone(), font_size: 20.0, ..default() },
                                 TextColor(Color::srgb(r, g, b)),
                             ));
                             // Cooldown text (hidden when ready)
@@ -2363,34 +2598,35 @@ fn handle_ability_buttons(
 }
 
 fn update_ability_cooldowns(
-    hero_q: Query<&HeroAbilities, With<Hero>>,
+    hero_q: Query<(&HeroAbilities, Option<&HeroRespawnTimer>), With<Hero>>,
     mut cd_text_q: Query<(&mut Text, &AbilityCooldownText)>,
     mut btn_q: Query<(&mut BackgroundColor, &AbilityButton)>,
     active_hero: Res<ActiveHeroType>,
 ) {
-    let Ok(abilities) = hero_q.get_single() else { return };
+    let Ok((abilities, respawn)) = hero_q.get_single() else { return };
     let defs = crate::data::hero_abilities(active_hero.0);
+    let hero_dead = respawn.is_some();
 
     // Update cooldown text
     for (mut text, cd_marker) in &mut cd_text_q {
         let idx = cd_marker.0;
         if idx < 3 {
             let cd = abilities.cooldowns[idx];
-            if cd > 0.0 {
-                text.0 = format!("{:.0}", cd.ceil());
-            } else {
+            if hero_dead || cd <= 0.0 {
                 text.0 = String::new();
+            } else {
+                text.0 = format!("{:.0}", cd.ceil());
             }
         }
     }
 
-    // Update button background (dim when on cooldown)
+    // Update button background (dim when on cooldown or hero dead)
     for (mut bg, btn) in &mut btn_q {
         let idx = btn.0;
         if idx < 3 {
             let [r, g, b] = defs[idx].color;
             let cd = abilities.cooldowns[idx];
-            if cd > 0.0 {
+            if hero_dead || cd > 0.0 {
                 bg.0 = Color::srgba(r * 0.15, g * 0.15, b * 0.15, 0.9);
             } else {
                 bg.0 = Color::srgba(r * 0.4, g * 0.4, b * 0.4, 0.9);
@@ -2536,14 +2772,30 @@ fn setup_main_menu(
                 Color::srgba(0.15, 0.15, 0.2, 0.9),
                 Color::srgb(0.8, 0.8, 0.9),
             );
-            // Model debug button
-            spawn_menu_button(
-                root, "Model Debug",
-                MenuAction::ModelDebug,
-                280.0,
-                Color::srgba(0.3, 0.15, 0.0, 0.7),
-                Color::srgb(1.0, 0.6, 0.3),
-            );
+            // Model debug button (hidden until admin mode)
+            root
+                .spawn((
+                    Button,
+                    MenuButton(MenuAction::ModelDebug),
+                    crate::systems::debug::AdminOnlyUI,
+                    Node {
+                        width: Val::Px(280.0),
+                        height: Val::Px(50.0),
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::Center,
+                        display: Display::None,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.3, 0.15, 0.0, 0.7)),
+                    BorderRadius::all(Val::Px(8.0)),
+                ))
+                .with_children(|btn| {
+                    btn.spawn((
+                        Text::new("Model Debug"),
+                        TextFont { font_size: 20.0, ..default() },
+                        TextColor(Color::srgb(1.0, 0.6, 0.3)),
+                    ));
+                });
         });
 }
 
@@ -2573,6 +2825,7 @@ fn setup_level_select(
     existing_cameras: Query<Entity, With<MenuCamera>>,
     save: Option<Res<crate::save::SaveData>>,
     admin: Res<crate::resources::AdminUnlocks>,
+    admin_mode: Res<crate::systems::debug::AdminMode>,
 ) {
     if existing_cameras.is_empty() {
         commands.spawn((Camera2d, MenuCamera));
@@ -2581,7 +2834,7 @@ fn setup_level_select(
     let save_data = save.map(|s| s.clone()).unwrap_or_default();
 
     // Admin panel
-    spawn_admin_panel(&mut commands, &admin);
+    spawn_admin_panel(&mut commands, &admin, &admin_mode);
 
     build_level_select_screen(&mut commands, &save_data, &admin);
 }
@@ -2616,10 +2869,16 @@ fn build_level_select_screen(
                 ..default()
             }).with_children(|header| {
                 header.spawn((
-                    Text::new("Select Level"),
-                    TextFont { font_size: 36.0, ..default() },
-                    TextColor(Color::srgb(1.0, 0.85, 0.3)),
-                ));
+                    Button,
+                    crate::systems::debug::AdminUnlockTap,
+                    Node::default(),
+                )).with_children(|wrap| {
+                    wrap.spawn((
+                        Text::new("Select Level"),
+                        TextFont { font_size: 36.0, ..default() },
+                        TextColor(Color::srgb(1.0, 0.85, 0.3)),
+                    ));
+                });
                 header.spawn((
                     Text::new(format!("Gems: {}", save_data.aether_gems)),
                     TextFont { font_size: 20.0, ..default() },
@@ -2627,21 +2886,62 @@ fn build_level_select_screen(
                 ));
             });
 
+            // Difficulty selector row
+            root.spawn(Node {
+                flex_direction: FlexDirection::Row,
+                column_gap: Val::Px(8.0),
+                margin: UiRect::bottom(Val::Px(8.0)),
+                ..default()
+            }).with_children(|row| {
+                use crate::resources::Difficulty;
+                for d in [Difficulty::Easy, Difficulty::Normal, Difficulty::Hard] {
+                    row.spawn((
+                        Button,
+                        DifficultyButton(d),
+                        Node {
+                            padding: UiRect::axes(Val::Px(14.0), Val::Px(6.0)),
+                            justify_content: JustifyContent::Center,
+                            align_items: AlignItems::Center,
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.2, 0.2, 0.3, 0.7)),
+                        BorderRadius::all(Val::Px(6.0)),
+                    )).with_children(|b| {
+                        b.spawn((
+                            Text::new(d.label()),
+                            TextFont { font_size: 18.0, ..default() },
+                            TextColor(Color::srgb(0.85, 0.85, 0.9)),
+                        ));
+                    });
+                }
+            });
+
             // Scrollable level cards
             root.spawn((
                 Node {
-                    flex_direction: FlexDirection::Row,
-                    column_gap: Val::Px(14.0),
-                    row_gap: Val::Px(14.0),
-                    flex_wrap: FlexWrap::Wrap,
-                    justify_content: JustifyContent::Center,
-                    align_items: AlignItems::FlexStart,
+                    width: Val::Percent(100.0),
                     flex_grow: 1.0,
-                    overflow: Overflow::scroll_y(),
+                    overflow: Overflow::clip_y(),
                     ..default()
                 },
             ))
-            .with_children(|row| {
+            .with_children(|viewport| {
+                viewport.spawn((
+                    Node {
+                        position_type: PositionType::Relative,
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(14.0),
+                        row_gap: Val::Px(14.0),
+                        flex_wrap: FlexWrap::Wrap,
+                        justify_content: JustifyContent::Center,
+                        align_items: AlignItems::FlexStart,
+                        width: Val::Percent(100.0),
+                        top: Val::Px(0.0),
+                        ..default()
+                    },
+                    LevelSelectScrollContent,
+                ))
+                .with_children(|row| {
                 for level_num in 1..=crate::data::MAX_LEVELS {
                     let info = crate::data::level_info(level_num);
                     let idx = (level_num as usize).saturating_sub(1);
@@ -2709,6 +3009,7 @@ fn build_level_select_screen(
                         }
                     });
                 }
+                });
             });
 
             // Back button
@@ -2761,6 +3062,8 @@ fn setup_hero_select(
     asset_server: Res<AssetServer>,
     save: Option<Res<crate::save::SaveData>>,
     admin: Res<crate::resources::AdminUnlocks>,
+    admin_mode: Res<crate::systems::debug::AdminMode>,
+    no_hero: Res<crate::resources::NoHeroSelected>,
 ) {
     // Use Camera3d for hero preview
     if existing_cameras.is_empty() {
@@ -2792,15 +3095,15 @@ fn setup_hero_select(
 
     let save_data = save.map(|s| s.clone()).unwrap_or_default();
 
-    // Spawn hero model preview (only if hero is unlocked)
-    if is_hero_unlocked(active_hero.0, &save_data, &admin) {
+    // Spawn hero model preview (only if a hero is selected and unlocked)
+    if !no_hero.0 && is_hero_unlocked(active_hero.0, &save_data, &admin) {
         spawn_hero_preview(&mut commands, &asset_server, active_hero.0);
     }
 
-    build_hero_select_screen(&mut commands, &active_hero, &save_data, &admin);
+    build_hero_select_screen(&mut commands, &active_hero, &save_data, &admin, &no_hero);
 
     // Admin panel
-    spawn_admin_panel(&mut commands, &admin);
+    spawn_admin_panel(&mut commands, &admin, &admin_mode);
 }
 
 fn spawn_hero_preview(commands: &mut Commands, asset_server: &AssetServer, hero_type: crate::data::HeroType) {
@@ -2849,6 +3152,7 @@ fn handle_hero_select(
     interactions: Query<(&Interaction, &MenuButton), Changed<Interaction>>,
     mut next_state: ResMut<NextState<AppState>>,
     mut active_hero: ResMut<ActiveHeroType>,
+    mut no_hero: ResMut<crate::resources::NoHeroSelected>,
     mut needs_setup: ResMut<crate::resources::NeedsFreshSetup>,
     roots: Query<Entity, With<MenuScreenRoot>>,
     preview_models: Query<Entity, With<HeroPreviewModel>>,
@@ -2861,25 +3165,23 @@ fn handle_hero_select(
         if *interaction != Interaction::Pressed { continue; }
         match btn.0 {
             MenuAction::SelectHero(hero_type) => {
-                // Only allow selecting unlocked heroes
-                if !is_hero_unlocked(hero_type, &save_data, &admin) {
-                    continue;
-                }
+                if !is_hero_unlocked(hero_type, &save_data, &admin) { continue; }
                 active_hero.0 = hero_type;
-                // Rebuild UI
-                for entity in &roots {
-                    commands.entity(entity).despawn_recursive();
-                }
-                // Despawn old preview model and spawn new one
-                for entity in &preview_models {
-                    commands.entity(entity).despawn_recursive();
-                }
+                no_hero.0 = false;
+                for entity in &roots { commands.entity(entity).despawn_recursive(); }
+                for entity in &preview_models { commands.entity(entity).despawn_recursive(); }
                 spawn_hero_preview(&mut commands, &asset_server, hero_type);
-                build_hero_select_screen(&mut commands, &active_hero, &save_data, &admin);
+                build_hero_select_screen(&mut commands, &active_hero, &save_data, &admin, &no_hero);
+            }
+            MenuAction::SelectNoHero => {
+                no_hero.0 = true;
+                for entity in &roots { commands.entity(entity).despawn_recursive(); }
+                for entity in &preview_models { commands.entity(entity).despawn_recursive(); }
+                build_hero_select_screen(&mut commands, &active_hero, &save_data, &admin, &no_hero);
             }
             MenuAction::StartGame => {
-                // Ensure selected hero is unlocked
-                if !is_hero_unlocked(active_hero.0, &save_data, &admin) {
+                // Allow start in towers-only mode OR with an unlocked hero
+                if !no_hero.0 && !is_hero_unlocked(active_hero.0, &save_data, &admin) {
                     continue;
                 }
                 needs_setup.0 = true;
@@ -2896,6 +3198,7 @@ fn build_hero_select_screen(
     active_hero: &ActiveHeroType,
     save_data: &crate::save::SaveData,
     admin: &crate::resources::AdminUnlocks,
+    no_hero: &crate::resources::NoHeroSelected,
 ) {
     commands
         .spawn((
@@ -2913,10 +3216,16 @@ fn build_hero_select_screen(
         .with_children(|root| {
             // Title
             root.spawn((
-                Text::new("Select Hero"),
-                TextFont { font_size: 32.0, ..default() },
-                TextColor(Color::srgb(1.0, 0.85, 0.3)),
-            ));
+                Button,
+                crate::systems::debug::AdminUnlockTap,
+                Node::default(),
+            )).with_children(|wrap| {
+                wrap.spawn((
+                    Text::new("Select Hero"),
+                    TextFont { font_size: 32.0, ..default() },
+                    TextColor(Color::srgb(1.0, 0.85, 0.3)),
+                ));
+            });
 
             // Hero cards — scrollable row pinned to bottom so 3D preview stays visible
             root.spawn((
@@ -2933,10 +3242,44 @@ fn build_hero_select_screen(
                 },
             ))
             .with_children(|row| {
+                // "No Hero" card — always available, towers-only mode
+                let no_hero_selected = no_hero.0;
+                let no_hero_bg = if no_hero_selected {
+                    Color::srgba(0.4, 0.4, 0.5, 0.95)
+                } else {
+                    Color::srgba(0.12, 0.12, 0.18, 0.9)
+                };
+                row.spawn((
+                    Button,
+                    MenuButton(MenuAction::SelectNoHero),
+                    Node {
+                        width: Val::Px(120.0),
+                        flex_direction: FlexDirection::Column,
+                        padding: UiRect::axes(Val::Px(6.0), Val::Px(4.0)),
+                        row_gap: Val::Px(2.0),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(no_hero_bg),
+                    BorderRadius::all(Val::Px(6.0)),
+                )).with_children(|card| {
+                    card.spawn((
+                        Text::new("No Hero"),
+                        TextFont { font_size: 16.0, ..default() },
+                        TextColor(Color::WHITE),
+                    ));
+                    card.spawn((
+                        Text::new("TOWERS ONLY"),
+                        TextFont { font_size: 10.0, ..default() },
+                        TextColor(Color::srgb(0.7, 0.7, 0.7)),
+                    ));
+                });
+
                 for hero_type in &crate::data::ALL_HERO_TYPES {
                     let info = crate::data::hero_info(*hero_type);
                     let stats = crate::data::hero_stats(*hero_type);
-                    let selected = active_hero.0 == *hero_type;
+                    let selected = !no_hero.0 && active_hero.0 == *hero_type;
                     let unlocked = is_hero_unlocked(*hero_type, save_data, admin);
                     let [r, g, b] = info.color;
 
@@ -3088,15 +3431,30 @@ fn setup_upgrade_shop(
                 ));
             });
 
-            // Upgrade cards
+            // Scrollable viewport for upgrade cards
             root.spawn(Node {
-                flex_direction: FlexDirection::Row,
-                column_gap: Val::Px(14.0),
-                row_gap: Val::Px(14.0),
-                flex_wrap: FlexWrap::Wrap,
+                width: Val::Percent(100.0),
+                flex_grow: 1.0,
+                overflow: Overflow::clip_y(),
                 justify_content: JustifyContent::Center,
                 ..default()
-            }).with_children(|row| {
+            }).with_children(|viewport| {
+                viewport.spawn((
+                    Node {
+                        position_type: PositionType::Relative,
+                        flex_direction: FlexDirection::Row,
+                        column_gap: Val::Px(14.0),
+                        row_gap: Val::Px(14.0),
+                        flex_wrap: FlexWrap::Wrap,
+                        justify_content: JustifyContent::Center,
+                        // 3 cards × 200px + 2 gaps × 14px = 628; cap at 628 to force 3-per-row → 3+2 layout
+                        max_width: Val::Px(628.0),
+                        top: Val::Px(0.0),
+                        ..default()
+                    },
+                    UpgradeShopScrollContent,
+                ))
+                .with_children(|row| {
                 for &kind in &crate::data::ALL_UPGRADES {
                     let def = crate::data::upgrade_def(kind);
                     let idx = crate::data::upgrade_index(kind);
@@ -3114,10 +3472,10 @@ fn setup_upgrade_shop(
                         MenuButton(MenuAction::BuyUpgrade(kind)),
                         Node {
                             width: Val::Px(200.0),
-                            min_height: Val::Px(160.0),
+                            min_height: Val::Px(130.0),
                             flex_direction: FlexDirection::Column,
-                            padding: UiRect::all(Val::Px(12.0)),
-                            row_gap: Val::Px(4.0),
+                            padding: UiRect::all(Val::Px(10.0)),
+                            row_gap: Val::Px(3.0),
                             ..default()
                         },
                         BackgroundColor(if affordable {
@@ -3173,6 +3531,7 @@ fn setup_upgrade_shop(
                         }
                     });
                 }
+                });
             });
 
             // Back button
@@ -3331,13 +3690,7 @@ fn build_upgrade_shop_screen(commands: &mut Commands, save: &crate::save::SaveDa
                             TextFont { font_size: 10.0, ..default() },
                             TextColor(Color::srgb(0.5, 0.8, 1.0)),
                         ));
-                        // Level pips: use simple ASCII characters that render on all platforms
-                        let filled: String = (0..current_level).map(|_| '[').collect::<String>()
-                            + &(0..current_level).map(|_| ']').collect::<String>();
-                        let pips = format!(
-                            "{}/{}",
-                            current_level, crate::data::UPGRADE_MAX_LEVEL
-                        );
+                        let pips = format!("{}/{}", current_level, crate::data::UPGRADE_MAX_LEVEL);
                         card.spawn((
                             Text::new(pips),
                             TextFont { font_size: 12.0, ..default() },
@@ -3680,7 +4033,7 @@ fn handle_logbook(
     for (interaction, btn) in &interactions {
         if *interaction != Interaction::Pressed { continue; }
         match btn.0 {
-            MenuAction::BackToMenu | MenuAction::LogbookBack => {
+            MenuAction::BackToMenu => {
                 next_state.set(AppState::MainMenu);
             }
             MenuAction::LogbookEnemies => {
@@ -3712,11 +4065,13 @@ fn handle_logbook(
 
 /// Manual scroll for the logbook page via mouse wheel + touch drag.
 /// Moves the inner content grid up/down by adjusting its top offset.
+/// Viewport height matches the parent's `max_height: 70vh` config in spawn.
 fn logbook_scroll(
     mut scroll_events: EventReader<bevy::input::mouse::MouseWheel>,
     touches: Res<Touches>,
     mut scroll_offset: ResMut<LogbookScrollOffset>,
-    mut grids: Query<&mut Node, With<LogbookScrollContent>>,
+    mut grids: Query<(&mut Node, &ComputedNode), With<LogbookScrollContent>>,
+    windows: Query<&Window>,
 ) {
     let mut dy = 0.0;
     for event in scroll_events.read() {
@@ -3725,16 +4080,112 @@ fn logbook_scroll(
             bevy::input::mouse::MouseScrollUnit::Pixel => event.y,
         };
     }
-    // Touch drag: use the first finger's vertical delta
     for finger in touches.iter() {
-        let delta = finger.delta();
-        dy -= delta.y;
+        dy -= finger.delta().y;
     }
     if dy == 0.0 { return; }
+    let viewport_h = windows.get_single().map(|w| w.height() * 0.7).unwrap_or(560.0);
 
-    scroll_offset.0 = (scroll_offset.0 + dy).clamp(0.0, 3000.0);
-    for mut node in &mut grids {
+    for (mut node, content) in &mut grids {
+        let max_scroll = (content.size().y - viewport_h).max(0.0);
+        scroll_offset.0 = (scroll_offset.0 + dy).clamp(0.0, max_scroll);
         node.top = Val::Px(-scroll_offset.0);
+    }
+}
+
+fn reset_level_select_scroll(
+    mut offset: ResMut<LevelSelectScrollOffset>,
+    mut content: Query<&mut Node, With<LevelSelectScrollContent>>,
+) {
+    offset.0 = 0.0;
+    for mut node in &mut content {
+        node.top = Val::Px(0.0);
+    }
+}
+
+fn handle_difficulty_buttons(
+    interactions: Query<(&Interaction, &DifficultyButton), Changed<Interaction>>,
+    mut difficulty: ResMut<crate::resources::Difficulty>,
+) {
+    for (interaction, btn) in &interactions {
+        if *interaction == Interaction::Pressed {
+            *difficulty = btn.0;
+        }
+    }
+}
+
+fn update_difficulty_buttons(
+    difficulty: Res<crate::resources::Difficulty>,
+    mut buttons: Query<(&DifficultyButton, &mut BackgroundColor)>,
+) {
+    for (btn, mut bg) in &mut buttons {
+        bg.0 = if btn.0 == *difficulty {
+            Color::srgba(0.4, 0.55, 0.3, 0.95)
+        } else {
+            Color::srgba(0.2, 0.2, 0.3, 0.7)
+        };
+    }
+}
+
+fn reset_upgrade_shop_scroll(
+    mut offset: ResMut<UpgradeShopScrollOffset>,
+    mut content: Query<&mut Node, With<UpgradeShopScrollContent>>,
+) {
+    offset.0 = 0.0;
+    for mut node in &mut content { node.top = Val::Px(0.0); }
+}
+
+fn upgrade_shop_scroll(
+    mut scroll_events: EventReader<bevy::input::mouse::MouseWheel>,
+    touches: Res<Touches>,
+    mut offset: ResMut<UpgradeShopScrollOffset>,
+    mut content: Query<(&mut Node, &ComputedNode), With<UpgradeShopScrollContent>>,
+    windows: Query<&Window>,
+) {
+    let mut dy = 0.0;
+    for event in scroll_events.read() {
+        dy -= match event.unit {
+            bevy::input::mouse::MouseScrollUnit::Line => event.y * 50.0,
+            bevy::input::mouse::MouseScrollUnit::Pixel => event.y,
+        };
+    }
+    for finger in touches.iter() { dy -= finger.delta().y; }
+    if dy == 0.0 { return; }
+    let viewport_h = windows.get_single().map(|w| (w.height() - 200.0).max(200.0)).unwrap_or(400.0);
+
+    for (mut node, content_node) in &mut content {
+        let max_scroll = (content_node.size().y - viewport_h).max(0.0);
+        offset.0 = (offset.0 + dy).clamp(0.0, max_scroll);
+        node.top = Val::Px(-offset.0);
+    }
+}
+
+/// Mouse wheel + touch drag scrolling for the level select grid.
+fn level_select_scroll(
+    mut scroll_events: EventReader<bevy::input::mouse::MouseWheel>,
+    touches: Res<Touches>,
+    mut offset: ResMut<LevelSelectScrollOffset>,
+    mut content: Query<(&mut Node, &ComputedNode), With<LevelSelectScrollContent>>,
+    windows: Query<&Window>,
+) {
+    let mut dy = 0.0;
+    for event in scroll_events.read() {
+        dy -= match event.unit {
+            bevy::input::mouse::MouseScrollUnit::Line => event.y * 50.0,
+            bevy::input::mouse::MouseScrollUnit::Pixel => event.y,
+        };
+    }
+    for finger in touches.iter() {
+        dy -= finger.delta().y;
+    }
+    if dy == 0.0 { return; }
+    // Viewport ≈ window height minus header (~60) + difficulty row (~50) + back button (~80) + padding.
+    let viewport_h = windows.get_single().map(|w| (w.height() - 200.0).max(200.0)).unwrap_or(400.0);
+
+    for (mut node, content_node) in &mut content {
+        let max_scroll = (content_node.size().y - viewport_h).max(0.0);
+        offset.0 = (offset.0 + dy).clamp(0.0, max_scroll);
+        node.top = Val::Px(-offset.0);
     }
 }
 
@@ -3888,9 +4339,11 @@ fn handle_credits(
 // Admin Panel (level select & hero select)
 // ---------------------------------------------------------------------------
 
-fn spawn_admin_panel(commands: &mut Commands, admin: &crate::resources::AdminUnlocks) {
+fn spawn_admin_panel(commands: &mut Commands, admin: &crate::resources::AdminUnlocks, admin_mode: &crate::systems::debug::AdminMode) {
+    let display = if admin_mode.active { Display::Flex } else { Display::None };
     commands.spawn((
         AdminPanelRoot,
+        crate::systems::debug::AdminOnlyUI,
         Node {
             position_type: PositionType::Absolute,
             right: Val::Px(12.0),
@@ -3898,6 +4351,7 @@ fn spawn_admin_panel(commands: &mut Commands, admin: &crate::resources::AdminUnl
             flex_direction: FlexDirection::Column,
             row_gap: Val::Px(4.0),
             padding: UiRect::all(Val::Px(8.0)),
+            display,
             ..default()
         },
         BackgroundColor(Color::srgba(0.0, 0.0, 0.0, 0.75)),
@@ -3917,6 +4371,8 @@ fn spawn_admin_panel(commands: &mut Commands, admin: &crate::resources::AdminUnl
         let heroes_label = if admin.all_heroes { "Heroes: ON" } else { "Unlock Heroes" };
         let heroes_color = if admin.all_heroes { Color::srgb(0.4, 1.0, 0.4) } else { Color::srgb(1.0, 0.85, 0.4) };
         spawn_admin_button(panel, heroes_label, heroes_color, AdminUnlockHeroesButton);
+
+        spawn_admin_button(panel, "Turn Off Admin", Color::srgb(1.0, 0.5, 0.5), crate::systems::debug::AdminTurnOffButton);
     });
 }
 
@@ -3952,8 +4408,10 @@ fn handle_admin_panel(
     state: Res<State<AppState>>,
     save: Option<Res<crate::save::SaveData>>,
     active_hero: Res<ActiveHeroType>,
+    no_hero: Res<crate::resources::NoHeroSelected>,
     preview_models: Query<Entity, With<HeroPreviewModel>>,
     asset_server: Res<AssetServer>,
+    admin_mode: Res<crate::systems::debug::AdminMode>,
 ) {
     let mut changed = false;
     for interaction in &levels_q {
@@ -3975,7 +4433,7 @@ fn handle_admin_panel(
         for entity in &admin_panels {
             commands.entity(entity).despawn_recursive();
         }
-        spawn_admin_panel(&mut commands, &admin);
+        spawn_admin_panel(&mut commands, &admin, &admin_mode);
         // Rebuild the menu screen
         for entity in &roots {
             commands.entity(entity).despawn_recursive();
@@ -3990,10 +4448,10 @@ fn handle_admin_panel(
                 for entity in &preview_models {
                     commands.entity(entity).despawn_recursive();
                 }
-                if is_hero_unlocked(active_hero.0, &save_data, &admin) {
+                if !no_hero.0 && is_hero_unlocked(active_hero.0, &save_data, &admin) {
                     spawn_hero_preview(&mut commands, &asset_server, active_hero.0);
                 }
-                build_hero_select_screen(&mut commands, &active_hero, &save_data, &admin);
+                build_hero_select_screen(&mut commands, &active_hero, &save_data, &admin, &no_hero);
             }
             _ => {}
         }

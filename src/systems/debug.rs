@@ -23,6 +23,91 @@ impl Default for DebugState {
     }
 }
 
+/// Session-scoped admin mode — hidden until activated by secret gesture.
+/// Activate by tapping any element marked AdminUnlockTap 7 times within 2s
+/// (currently: gold icon during play, "Select Level" header, "Select Hero" header).
+#[derive(Resource)]
+pub struct AdminMode {
+    pub active: bool,
+    pub tap_count: u32,
+    pub last_tap: f64,
+}
+
+impl Default for AdminMode {
+    fn default() -> Self {
+        Self { active: false, tap_count: 0, last_tap: 0.0 }
+    }
+}
+
+/// Marker for any UI element whose tap should count toward admin unlock.
+#[derive(Component)]
+pub struct AdminUnlockTap;
+
+/// Counts taps on AdminUnlockTap-marked elements; activates admin at 7 within 2s.
+pub fn admin_unlock_tap(
+    interactions: Query<&Interaction, (Changed<Interaction>, With<AdminUnlockTap>)>,
+    time: Res<Time>,
+    mut admin: ResMut<AdminMode>,
+) {
+    if admin.active {
+        return;
+    }
+    for interaction in &interactions {
+        if *interaction != Interaction::Pressed {
+            continue;
+        }
+        let now = time.elapsed_secs_f64();
+        if now - admin.last_tap > 2.0 {
+            admin.tap_count = 0;
+        }
+        admin.tap_count += 1;
+        admin.last_tap = now;
+        if admin.tap_count >= 7 {
+            admin.active = true;
+            info!("ADMIN MODE ACTIVATED");
+        }
+    }
+}
+
+/// Marker for UI elements that should only be visible in admin mode.
+#[derive(Component)]
+pub struct AdminOnlyUI;
+
+/// Syncs visibility of admin-only UI elements with current AdminMode state.
+/// Runs every frame so newly-spawned admin elements pick up the correct
+/// visibility even when AdminMode itself hasn't changed (e.g., when a fresh
+/// HUD is spawned during state transition into Playing).
+pub fn sync_admin_ui_visibility(
+    admin: Res<AdminMode>,
+    mut query: Query<&mut Node, With<AdminOnlyUI>>,
+) {
+    let display = if admin.active { Display::Flex } else { Display::None };
+    for mut node in &mut query {
+        if node.display != display {
+            node.display = display;
+        }
+    }
+}
+
+/// Marker for "Turn Off Admin" buttons in admin/debug panels.
+#[derive(Component)]
+pub struct AdminTurnOffButton;
+
+pub fn handle_admin_turn_off(
+    interactions: Query<&Interaction, (Changed<Interaction>, With<AdminTurnOffButton>)>,
+    mut admin: ResMut<AdminMode>,
+    mut debug_state: ResMut<DebugState>,
+) {
+    for i in &interactions {
+        if *i == Interaction::Pressed {
+            admin.active = false;
+            admin.tap_count = 0;
+            debug_state.show_overlay = false;
+            info!("ADMIN MODE DISABLED");
+        }
+    }
+}
+
 // Admin panel button markers
 #[derive(Component)]
 pub struct DebugToggleButton;
@@ -39,14 +124,18 @@ pub struct DebugHealHeroButton;
 #[derive(Component)]
 pub struct DebugNextLevelButton;
 
-/// Admin hotkeys for testing (desktop).
+/// Admin hotkeys for testing (desktop). Only active when AdminMode is on.
 pub fn debug_hotkeys(
     keys: Res<ButtonInput<KeyCode>>,
     mut game: ResMut<GameData>,
     mut wave: ResMut<WaveState>,
     mut enemies: Query<&mut Health, With<Enemy>>,
     mut debug_state: ResMut<DebugState>,
+    admin: Res<AdminMode>,
 ) {
+    if !admin.active {
+        return;
+    }
     if keys.just_pressed(KeyCode::KeyG) {
         game.gold += 1000;
         info!("DEBUG: +1000 gold (total: {})", game.gold);
@@ -129,6 +218,7 @@ pub fn manage_debug_overlay(
                 spawn_debug_button(parent, "Skip Wave", Color::srgb(0.4, 0.8, 1.0), DebugSkipButton);
                 spawn_debug_button(parent, "Heal Hero", Color::srgb(0.4, 1.0, 0.4), DebugHealHeroButton);
                 spawn_debug_button(parent, "Next Level", Color::srgb(0.8, 0.6, 1.0), DebugNextLevelButton);
+                spawn_debug_button(parent, "Turn Off Admin", Color::srgb(1.0, 0.5, 0.5), AdminTurnOffButton);
             });
     }
 }

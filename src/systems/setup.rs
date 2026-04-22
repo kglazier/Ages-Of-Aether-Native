@@ -56,6 +56,7 @@ pub fn setup_level(
     mut game_data: ResMut<crate::resources::GameData>,
     mut auto_wave: ResMut<crate::resources::AutoWave>,
     save_data: Option<Res<crate::save::SaveData>>,
+    difficulty: Res<crate::resources::Difficulty>,
 ) {
     // Reset auto-wave at the start of each new level
     auto_wave.enabled = false;
@@ -70,11 +71,13 @@ pub fn setup_level(
         if idx < save.upgrade_levels.len() { save.upgrade_levels[idx] } else { 0 }
     } else { 0 };
     let gold_bonus = 1.0 + 0.10 * war_chest_level as f32;
+    let diff_gold = difficulty.gold_mult();
+    let lives = difficulty.starting_lives();
 
     // Populate GameData from level config
-    game_data.gold = (config.starting_gold as f32 * gold_bonus) as u32;
-    game_data.lives = config.lives;
-    game_data.max_lives = config.lives;
+    game_data.gold = (config.starting_gold as f32 * gold_bonus * diff_gold) as u32;
+    game_data.lives = lives;
+    game_data.max_lives = lives;
     game_data.max_waves = config.max_waves;
     game_data.wave_number = 0;
 

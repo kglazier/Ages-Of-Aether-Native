@@ -119,30 +119,6 @@ const LEGIONARY_ANIMS: [&str; 4] = [
     "models/enemies/legionary.glb",        // death (walk clip + rocking overlay)
 ];
 
-/// Bone remapping: Mixamo rig → Legionary custom rig.
-const LEGIONARY_BONE_MAP: &[(&str, &str)] = &[
-    ("mixamorig:Hips", "body"),
-    ("mixamorig:Spine", "body_top0"),
-    ("mixamorig:Spine1", "body_top1"),
-    ("mixamorig:Spine2", "body_top2"),
-    ("mixamorig:Neck", "neck"),
-    ("mixamorig:Head", "head"),
-    ("mixamorig:LeftShoulder", "shoulder_left"),
-    ("mixamorig:LeftArm", "arm_left_top"),
-    ("mixamorig:LeftForeArm", "arm_left_bot"),
-    ("mixamorig:LeftHand", "arm_left_hand"),
-    ("mixamorig:RightShoulder", "shoulder_right"),
-    ("mixamorig:RightArm", "arm_right_top"),
-    ("mixamorig:RightForeArm", "arm_right_bot"),
-    ("mixamorig:RightHand", "arm_right_hand"),
-    ("mixamorig:LeftUpLeg", "leg_left_top"),
-    ("mixamorig:LeftLeg", "leg_left_bot"),
-    ("mixamorig:LeftFoot", "leg_left_foot"),
-    ("mixamorig:RightUpLeg", "leg_right_top"),
-    ("mixamorig:RightLeg", "leg_right_bot"),
-    ("mixamorig:RightFoot", "leg_right_foot"),
-];
-
 pub fn enemy_stats(enemy_type: EnemyType) -> EnemyStats {
     match enemy_type {
         // =====================================================================
@@ -967,7 +943,7 @@ pub fn level2_build_spots() -> Vec<Vec3> {
         Vec3::new(-8.0, 0.0, -2.0),
         Vec3::new(-5.0, 0.0, 6.0),
         Vec3::new(-1.0, 0.0, -8.0),
-        Vec3::new(5.0, 0.0, -5.0),
+        Vec3::new(5.0, 0.0, -8.0),
         Vec3::new(9.0, 0.0, -4.0),
         Vec3::new(3.0, 0.0, 7.0),
         Vec3::new(8.0, 0.0, 9.0),
@@ -1234,7 +1210,7 @@ pub fn level5_path() -> Vec<Vec3> {
 
 pub fn level5_build_spots() -> Vec<Vec3> {
     vec![
-        Vec3::new(-14.0, 0.0, 3.0),
+        Vec3::new(-15.0, 0.0, 0.0),
         Vec3::new(-14.0, 0.0, -9.0),
         Vec3::new(-8.0, 0.0, -3.0),
         Vec3::new(-4.0, 0.0, -9.0),
@@ -1591,7 +1567,7 @@ pub fn level9_path() -> Vec<Vec3> {
 
 pub fn level9_build_spots() -> Vec<Vec3> {
     vec![
-        Vec3::new(-14.0, 0.0, -3.0),
+        Vec3::new(-15.0, 0.0, 0.0),
         Vec3::new(-14.0, 0.0, 9.0),
         Vec3::new(-8.0, 0.0, 3.0),
         Vec3::new(-4.0, 0.0, 9.0),
@@ -1860,22 +1836,22 @@ pub fn hero_info(hero_type: HeroType) -> HeroInfo {
 }
 
 pub const ALL_HERO_TYPES: [HeroType; 5] = [
-    HeroType::SacredMaiden,
     HeroType::IceHulk,
     HeroType::NorthernOutsider,
     HeroType::Pharaoh,
     HeroType::ScarletMagus,
+    HeroType::SacredMaiden, // Aethon — title-character capstone, last to unlock
 ];
 
 /// Returns the level that must be beaten (stars > 0) to unlock a hero.
-/// 0 means always unlocked.
+/// Players start with no hero (towers only) and earn each one as they progress.
 pub fn hero_unlock_level(hero: HeroType) -> u32 {
     match hero {
-        HeroType::SacredMaiden => 0,     // always available
-        HeroType::IceHulk => 2,          // beat level 2
-        HeroType::NorthernOutsider => 4, // beat level 4
-        HeroType::Pharaoh => 6,          // beat level 6
-        HeroType::ScarletMagus => 8,     // beat level 8
+        HeroType::IceHulk => 1,          // beat level 1
+        HeroType::NorthernOutsider => 3, // beat level 3
+        HeroType::Pharaoh => 5,          // beat level 5
+        HeroType::ScarletMagus => 7,     // beat level 7
+        HeroType::SacredMaiden => 9,     // beat level 9 — Aethon, the title hero
     }
 }
 

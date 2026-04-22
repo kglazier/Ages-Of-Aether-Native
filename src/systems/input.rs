@@ -20,7 +20,7 @@ pub fn handle_world_click(
     towers: Query<(Entity, &Transform), With<Tower>>,
     hero_q: Query<(&Transform, Option<&HeroAnimState>), (With<Hero>, Without<Tower>, Without<BuildSpot>, Without<HeroRespawnTimer>)>,
     bone_globals: Query<&GlobalTransform, (Without<Hero>, Without<Tower>, Without<BuildSpot>)>,
-    golems: Query<(&Transform, &GolemOwner), With<Golem>>,
+    golems: Query<(&Transform, &GolemOwner), (With<Golem>, Without<crate::components::ReinforcementSoldier>)>,
     mut selection: ResMut<Selection>,
     mut hero_move_cmd: ResMut<crate::resources::HeroMoveCommand>,
     mut ability_targeting: ResMut<crate::resources::PlayerAbilityTargeting>,

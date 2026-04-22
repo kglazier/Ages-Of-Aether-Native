@@ -1,6 +1,40 @@
 use bevy::prelude::*;
 use crate::data::EnemyType;
 
+#[derive(Resource, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Difficulty {
+    Easy,
+    Normal,
+    Hard,
+}
+
+impl Default for Difficulty {
+    fn default() -> Self { Difficulty::Normal }
+}
+
+impl Difficulty {
+    pub fn label(self) -> &'static str {
+        match self {
+            Difficulty::Easy => "Easy",
+            Difficulty::Normal => "Normal",
+            Difficulty::Hard => "Hard",
+        }
+    }
+    /// Starting lives — same across all levels, varies by difficulty.
+    pub fn starting_lives(self) -> u32 {
+        match self { Difficulty::Easy => 20, Difficulty::Normal => 15, Difficulty::Hard => 10 }
+    }
+    pub fn gold_mult(self) -> f32 {
+        match self { Difficulty::Easy => 1.25, Difficulty::Normal => 1.0, Difficulty::Hard => 0.85 }
+    }
+    pub fn enemy_hp_mult(self) -> f32 {
+        match self { Difficulty::Easy => 0.85, Difficulty::Normal => 1.0, Difficulty::Hard => 1.20 }
+    }
+    pub fn enemy_speed_mult(self) -> f32 {
+        match self { Difficulty::Easy => 0.95, Difficulty::Normal => 1.0, Difficulty::Hard => 1.10 }
+    }
+}
+
 #[derive(Resource)]
 pub struct GameData {
     pub gold: u32,
@@ -94,14 +128,24 @@ impl Default for NeedsFreshSetup {
 #[derive(Resource, Default)]
 pub struct HeroMoveCommand(pub Option<Vec3>);
 
-/// Which hero type is currently active.
+/// Which hero type is currently active. Only matters when NoHeroSelected is false.
 #[derive(Resource)]
 pub struct ActiveHeroType(pub crate::data::HeroType);
 
 impl Default for ActiveHeroType {
     fn default() -> Self {
-        Self(crate::data::HeroType::SacredMaiden)
+        Self(crate::data::HeroType::IceHulk) // first unlock; placeholder until player picks
     }
+}
+
+/// True = "Towers Only" mode (no hero spawns, no hero HUD).
+/// Default true so a fresh save starts with no hero — players earn the first one
+/// by beating level 1.
+#[derive(Resource)]
+pub struct NoHeroSelected(pub bool);
+
+impl Default for NoHeroSelected {
+    fn default() -> Self { Self(true) }
 }
 
 /// Volume settings for music and sound effects (0.0–1.0).

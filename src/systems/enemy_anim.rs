@@ -10,14 +10,6 @@ pub struct EnemyClipsNeedStrip {
     pub stripped: bool,
 }
 
-/// Tracks clip handles that need bone name remapping (e.g. Mixamo → custom rig).
-#[derive(Component)]
-pub struct NeedsBoneRemap {
-    pub handles: Vec<Handle<AnimationClip>>,
-    pub bone_map: &'static [(&'static str, &'static str)],
-    pub remapped: bool,
-}
-
 /// After enemy scene loads, find AnimationPlayer and build animation graph.
 /// Supports two modes:
 /// - Embedded animations (blobs): loads clips by index from the GLTF file
@@ -245,7 +237,7 @@ pub fn rock_single_clip_enemies(
     mut transforms: Query<&mut Transform>,
     time: Res<Time>,
 ) {
-    for (anim_state, type_id, children, blocked, dying, flying) in &enemies {
+    for (_anim_state, type_id, children, blocked, dying, flying) in &enemies {
         // Skip flying enemies — their child rotation is set by EnemyModelRotation
         if flying.is_some() { continue; }
         let stats = crate::data::enemy_stats(type_id.0);

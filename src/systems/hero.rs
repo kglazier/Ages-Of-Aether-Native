@@ -58,7 +58,12 @@ pub fn spawn_hero(
     existing_heroes: Query<Entity, With<Hero>>,
     current_level: Res<crate::resources::CurrentLevel>,
     save_data: Option<Res<crate::save::SaveData>>,
+    no_hero: Res<crate::resources::NoHeroSelected>,
 ) {
+    // Skip entirely in towers-only mode
+    if no_hero.0 {
+        return;
+    }
     // Don't spawn if hero already exists
     if !existing_heroes.is_empty() {
         return;
@@ -554,7 +559,7 @@ pub fn block_enemies(
         // Use hysteresis: smaller range to enter blocked state, larger to exit
         let enemy_xz = Vec3::new(transform.translation.x, 0.0, transform.translation.z);
         let already_blocked = was_blocked.is_some();
-        let hysteresis = if already_blocked { 1.5 } else { 0.0 }; // stay blocked longer
+        let hysteresis = if already_blocked { 0.3 } else { 0.0 }; // small buffer to prevent flicker
         let in_range = blockers.iter().any(|(pos, range)| {
             let blocker_xz = Vec3::new(pos.x, 0.0, pos.z);
             blocker_xz.distance(enemy_xz) <= *range + hysteresis

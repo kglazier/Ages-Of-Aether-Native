@@ -183,7 +183,10 @@ pub fn setup_golem_animations(
         let attack_node = graph.add_clip(attack_clip, 1.0, graph.root);
         let graph_handle = graphs.add(graph);
 
-        commands.entity(player_entity).insert(AnimationGraphHandle(graph_handle));
+        commands.entity(player_entity).insert((
+            AnimationGraphHandle(graph_handle),
+            AnimationTransitions::new(),
+        ));
 
         // Store animation state on the golem entity
         commands.entity(golem_entity).insert((
@@ -205,20 +208,24 @@ pub fn setup_golem_animations(
 /// Start idle playback on newly set up golems.
 pub fn play_golem_animations(
     golems: Query<&GolemAnimState, Added<GolemAnimState>>,
-    mut players: Query<&mut AnimationPlayer>,
+    mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
 ) {
     for anim_state in &golems {
-        if let Ok(mut player) = players.get_mut(anim_state.player_entity) {
-            player.play(anim_state.idle_node).repeat();
+        if let Ok((mut player, mut transitions)) = players.get_mut(anim_state.player_entity) {
+            transitions
+                .play(&mut player, anim_state.idle_node, std::time::Duration::ZERO)
+                .repeat();
         }
     }
 }
 
 /// Switch golem animation based on current behavior (idle, walking, attacking).
+/// Uses AnimationTransitions to cross-fade between clips so there's no T-pose pop
+/// in the single frame between stop_all() and play() of the new clip.
 pub fn update_golem_animations(
     mut golems: Query<(&mut GolemAnimState, &BlockingEnemy, &GolemAttack, &Transform, &GolemRallyPoint), With<Golem>>,
     enemies: Query<&Transform, (With<Enemy>, Without<Golem>)>,
-    mut players: Query<&mut AnimationPlayer>,
+    mut players: Query<(&mut AnimationPlayer, &mut AnimationTransitions)>,
 ) {
     for (mut anim_state, blocking, _attack, golem_transform, rally) in &mut golems {
         // XZ distance only — Y is fixed at GOLEM_Y_OFFSET
@@ -242,14 +249,15 @@ pub fn update_golem_animations(
 
         if desired != anim_state.current {
             anim_state.current = desired;
-            if let Ok(mut player) = players.get_mut(anim_state.player_entity) {
-                player.stop_all();
+            if let Ok((mut player, mut transitions)) = players.get_mut(anim_state.player_entity) {
                 let node = match desired {
                     GolemAnimKind::Idle => anim_state.idle_node,
                     GolemAnimKind::Walk => anim_state.walk_node,
                     GolemAnimKind::Attack => anim_state.attack_node,
                 };
-                player.play(node).repeat();
+                transitions
+                    .play(&mut player, node, std::time::Duration::from_millis(180))
+                    .repeat();
             }
         }
     }
@@ -355,126 +363,6 @@ pub fn golem_assign_targets(
     }
 }
 
-/// Place newly blocked enemies into spread positions around the nearest blocker.
-/// Uses deterministic lateral + backward offsets relative to the path direction.
-pub fn spread_blocked_enemies(
-    mut enemies: Query<(Entity, &mut Transform, &PathFollower, &GolemBlocked), With<Enemy>>,
-    golems: Query<&Transform, (With<Golem>, Without<Enemy>)>,
-    hero_q: Query<&Transform, (With<Hero>, Without<Golem>, Without<Enemy>, Without<crate::components::HeroRespawnTimer>)>,
-    mut settled: Local<std::collections::HashSet<Entity>>,
-    level_path: Res<crate::resources::LevelPath>,
-) {
-    // Collect blocker positions (golems + hero if near path)
-    let mut blocker_positions: Vec<Vec3> = golems.iter().map(|t| t.translation).collect();
-    if let Ok(hero_tf) = hero_q.get_single() {
-        let path = &level_path.0;
-        let hero_near_path = (0..path.len() - 1).any(|i| {
-            let ab = path[i + 1] - path[i];
-            let ap = hero_tf.translation - path[i];
-            let t = (ap.dot(ab) / ab.dot(ab)).clamp(0.0, 1.0);
-            hero_tf.translation.distance(path[i] + ab * t) <= 2.5
-        });
-        if hero_near_path {
-            blocker_positions.push(hero_tf.translation);
-        }
-    }
-
-    if blocker_positions.is_empty() {
-        return;
-    }
-
-    // Collect all blocked enemies
-    let all_blocked: Vec<(Entity, Vec3)> = enemies
-        .iter()
-        .map(|(e, t, _, _)| (e, t.translation))
-        .collect();
-
-    // Clean up settled set
-    settled.retain(|e| all_blocked.iter().any(|(ent, _)| ent == e));
-
-    // Identify new arrivals
-    let new_entities: Vec<Entity> = all_blocked.iter()
-        .filter(|(e, _)| !settled.contains(e))
-        .map(|(e, _)| *e)
-        .collect();
-
-    if new_entities.is_empty() {
-        return;
-    }
-
-    // Get the path for calculating spread direction
-    let path = &level_path.0;
-
-    // Count existing settled enemies to know the next slot index
-    let mut slot = settled.len() as f32;
-
-    // Collect positions of all settled (already repositioned) blocked enemies
-    let settled_positions: Vec<Vec3> = all_blocked.iter()
-        .filter(|(e, _)| settled.contains(e))
-        .map(|(_, pos)| *pos)
-        .collect();
-
-    for new_entity in &new_entities {
-        let Ok((_, mut transform, follower, _)) = enemies.get_mut(*new_entity) else {
-            continue;
-        };
-
-        let enemy_pos = transform.translation;
-
-        // Only reposition if too close to another blocked enemy (overlap)
-        let min_spacing = 0.6;
-        let overlapping = settled_positions.iter().any(|p| {
-            let dx = enemy_pos.x - p.x;
-            let dz = enemy_pos.z - p.z;
-            (dx * dx + dz * dz).sqrt() < min_spacing
-        });
-
-        if overlapping {
-            // Nudge backward along the path and slightly lateral — stay near the path
-            let seg = follower.segment.min(path.len().saturating_sub(2));
-            let path_dir = (path[seg + 1] - path[seg]).normalize_or_zero();
-            let lateral = Vec3::new(-path_dir.z, 0.0, path_dir.x);
-            let backward = -path_dir;
-
-            let i = slot as i32;
-            let side = if i % 2 == 0 { 1.0 } else { -1.0 };
-            let lateral_offset = side * 0.4;
-            let backward_offset = 0.4 + (i as f32 * 0.3);
-
-            let new_pos = enemy_pos
-                + backward * backward_offset
-                + lateral * lateral_offset;
-
-            transform.translation.x = new_pos.x;
-            transform.translation.z = new_pos.z;
-        }
-        // Otherwise: enemy stays where it naturally stopped on the path
-
-        settled.insert(*new_entity);
-        slot += 1.0;
-    }
-}
-
-/// Scatter enemies that were just unblocked so they don't blob together.
-/// Gives each a unique progress offset and lateral offset for natural spacing.
-pub fn scatter_unblocked_enemies(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut PathFollower, &NeedsUnblockScatter)>,
-) {
-    for (entity, mut follower, scatter) in &mut query {
-        let i = scatter.0;
-        // Stagger progress: push backward along path so they don't blob
-        let progress_offset = -0.05 - ((i as f32 * 0.618) % 1.0) * 0.15; // -0.05 to -0.20
-        follower.progress = (follower.progress + progress_offset).clamp(0.0, 0.99);
-
-        // Lateral offset: spread perpendicular to path, alternating sides (stay near path)
-        let side = if i % 2 == 0 { 1.0 } else { -1.0 };
-        let magnitude = 0.4 + (i as f32 * 0.4) % 0.8; // 0.4 to 1.2
-        follower.lateral_offset = side * magnitude;
-
-        commands.entity(entity).remove::<NeedsUnblockScatter>();
-    }
-}
 
 /// Golems attack their blocked enemy, dealing melee damage.
 pub fn golem_melee_attack(
@@ -646,5 +534,63 @@ pub fn strip_golem_root_motion(
         }
         strip.stripped = true;
         info!("Golem root motion stripped");
+    }
+}
+
+/// Spawns a glowing selection ring on the ground for each new golem.
+/// Ring is tracked by GolemSelectionRing(golem_entity) and positioned each frame
+/// in update_golem_visuals. Hidden when not selected.
+pub fn spawn_golem_visuals(
+    mut commands: Commands,
+    new_golems: Query<Entity, Added<Golem>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
+) {
+    for golem_entity in &new_golems {
+        commands.spawn((
+            Mesh3d(meshes.add(Annulus::new(0.65, 0.85))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                base_color: Color::srgba(0.5, 0.8, 1.0, 0.4),
+                emissive: LinearRgba::new(0.5, 0.8, 1.0, 1.0),
+                alpha_mode: AlphaMode::Blend,
+                unlit: true,
+                double_sided: true,
+                ..default()
+            })),
+            Transform::from_translation(Vec3::new(0.0, -100.0, 0.0)),
+            GolemSelectionRing(golem_entity),
+            GameWorldEntity,
+        ));
+    }
+}
+
+/// Updates each golem ring: visible only when its tower is in
+/// Selection::SettingRallyPoint mode. Cleans up orphan rings.
+pub fn update_golem_visuals(
+    mut commands: Commands,
+    mut rings: Query<(Entity, &GolemSelectionRing, &mut Transform), Without<Golem>>,
+    golems: Query<(&GlobalTransform, &GolemOwner), With<Golem>>,
+    selection: Res<crate::resources::Selection>,
+    time: Res<Time>,
+) {
+    let active_tower = match *selection {
+        crate::resources::Selection::SettingRallyPoint(t) => Some(t),
+        _ => None,
+    };
+    let pulse = 1.0 + (time.elapsed_secs() * 2.0).sin() * 0.1;
+
+    for (ring_entity, tracked, mut tf) in &mut rings {
+        let Ok((golem_global, owner)) = golems.get(tracked.0) else {
+            commands.entity(ring_entity).despawn_recursive();
+            continue;
+        };
+        if active_tower == Some(owner.0) {
+            let p = golem_global.translation();
+            tf.translation = Vec3::new(p.x, 0.05, p.z);
+            tf.rotation = Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2);
+            tf.scale = Vec3::splat(pulse);
+        } else {
+            tf.translation = Vec3::new(0.0, -100.0, 0.0);
+        }
     }
 }

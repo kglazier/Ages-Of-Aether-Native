@@ -541,11 +541,11 @@ pub fn cavalry_debug_tick(
     cavalry_q: Query<(Entity, &CavalryDebugStyle, &Children)>,
     mut transforms: Query<&mut Transform>,
     knight_q: Query<Entity, With<crate::components::CavalryKnight>>,
-    children_q: Query<&Children>,
+    _children_q: Query<&Children>,
     time: Res<Time>,
 ) {
     let t = time.elapsed_secs();
-    for (entity, style, children) in &cavalry_q {
+    for (_entity, style, children) in &cavalry_q {
         // Find the knight child entity
         let knight_entity = children.iter()
             .find(|c| knight_q.get(**c).is_ok())

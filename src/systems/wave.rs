@@ -40,6 +40,7 @@ pub fn wave_spawner(
     mut wave_btn: ResMut<WaveButtonPressed>,
     level_path: Res<crate::resources::LevelPath>,
     current_level: Res<crate::resources::CurrentLevel>,
+    difficulty: Res<crate::resources::Difficulty>,
 ) {
     // Consume the button press
     let btn_pressed = wave_btn.0;
@@ -64,8 +65,8 @@ pub fn wave_spawner(
 
             let wave_num = (game.wave_number + 1) as f32;
             let config = level_start_config(current_level.0);
-            let hp_mult = 1.0 + config.wave_hp_scale * (wave_num - 1.0);
-            let speed_mult = 1.0 + config.wave_speed_scale * (wave_num - 1.0);
+            let hp_mult = (1.0 + config.wave_hp_scale * (wave_num - 1.0)) * difficulty.enemy_hp_mult();
+            let speed_mult = (1.0 + config.wave_speed_scale * (wave_num - 1.0)) * difficulty.enemy_speed_mult();
             let current_pulse = wave.current_pulse;
 
             // Try to spawn from the current group
@@ -193,7 +194,8 @@ fn spawn_enemy(
     let stats = enemy_stats(enemy_type);
     let spawn_pos = level_path.0[0];
     let scaled_speed = stats.speed * speed_mult;
-    let y_offset = if stats.is_flying { 2.0 } else {
+    let y_offset = if matches!(enemy_type, EnemyType::Jellyfish) { 3.0 }
+    else if stats.is_flying { 2.0 } else {
         match enemy_type {
             EnemyType::Stegosaurus => 0.6,
             EnemyType::Triceratops => 0.5,

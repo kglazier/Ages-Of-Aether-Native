@@ -395,6 +395,10 @@ pub struct HeroHealthBarBg3d;
 #[derive(Component)]
 pub struct HeroSelectionRing;
 
+/// Glowing selection ring on ground under a golem. Stores the golem entity it tracks.
+#[derive(Component)]
+pub struct GolemSelectionRing(pub Entity);
+
 /// Visual marker showing where the hero is moving to.
 #[derive(Component)]
 pub struct HeroMoveMarker;
