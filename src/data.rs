@@ -682,67 +682,76 @@ pub struct WaveGroup {
 
 /// All 10 waves for Level 1 — pulse-based for fight-breathe-fight rhythm.
 pub fn level1_waves() -> Vec<WaveDefinition> {
+    // Tuned for smooth ~1.30-1.40x HP growth — no easy "breather" waves,
+    // no sudden cliffs. New enemy types introduced 1-2 waves earlier than
+    // before so later waves aren't carrying the cliff.
     vec![
-        // Wave 1 — single pulse intro
+        // Wave 1 — intro, grunts only
         WaveDefinition { early_call_bonus: 10, groups: vec![
             WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 1.0, delay: 0.0, pulse: 0 },
         ]},
-        // Wave 2 — single pulse
+        // Wave 2 — slight bump, still grunts only
         WaveDefinition { early_call_bonus: 10, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Amoeba, count: 8, interval: 0.8, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 6, interval: 0.8, delay: 0.0, pulse: 0 },
         ]},
-        // Wave 3 — 2 pulses, introduce fast enemies
+        // Wave 3 — introduce fast
         WaveDefinition { early_call_bonus: 15, groups: vec![
             WaveGroup { enemy_type: EnemyType::Amoeba, count: 6, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 3, interval: 0.6, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 2, interval: 0.6, delay: 0.0, pulse: 1 },
         ]},
-        // Wave 4 — 2 pulses, introduce trilobites
+        // Wave 4 — introduce trilobites
         WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 6, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.7, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 4, interval: 0.8, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 3, interval: 0.6, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 2, interval: 1.0, delay: 0.0, pulse: 1 },
         ]},
-        // Wave 5 — 2 pulses, introduce armored
+        // Wave 5 — more of everything
         WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 8, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 4, interval: 0.5, delay: 2.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 2, interval: 1.5, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 4, interval: 0.7, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 4, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 3, interval: 0.8, delay: 0.0, pulse: 1 },
         ]},
-        // Wave 6 — 2 pulses, introduce healers
+        // Wave 6 — introduce armored (gently, 1 Nautilus)
         WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 1.2, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.5, delay: 1.5, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.5, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 2, interval: 1.2, delay: 1.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 4, interval: 0.6, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 4, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 3, interval: 0.8, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 1, interval: 1.2, delay: 1.0, pulse: 1 },
         ]},
-        // Wave 7 — 2 pulses, introduce flying
+        // Wave 7 — introduce flying; no more stockpile window
         WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 8, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 3, interval: 0.7, delay: 2.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 3, interval: 0.7, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 3, interval: 1.0, delay: 1.5, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.6, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 4, interval: 0.45, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 4, interval: 0.7, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 1, interval: 1.2, delay: 1.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 2, interval: 0.9, delay: 0.0, pulse: 2 },
         ]},
-        // Wave 8 — 3 pulses
+        // Wave 8 — introduce healer, more armored
         WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 5, interval: 1.0, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 6, interval: 0.5, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 3, interval: 1.0, delay: 1.5, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 8, interval: 0.6, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 5, interval: 0.45, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 4, interval: 0.7, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 2, interval: 1.0, delay: 1.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 2, interval: 0.8, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 1, interval: 1.0, delay: 1.0, pulse: 2 },
         ]},
-        // Wave 9 — 3 pulses, heavy mix
+        // Wave 9 — heavy mix
         WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 10, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 2, interval: 1.0, delay: 1.5, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 5, interval: 0.8, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 6, interval: 0.5, delay: 1.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 6, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 6, interval: 0.4, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 5, interval: 0.6, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 3, interval: 1.0, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 3, interval: 0.8, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 2, interval: 1.0, delay: 1.0, pulse: 2 },
         ]},
-        // Wave 10 — 3 pulses, final assault
+        // Wave 10 — final assault
         WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 6, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 5, interval: 0.4, delay: 1.5, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 0.8, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 5, interval: 0.4, delay: 1.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 8, interval: 0.4, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 7, interval: 0.35, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 6, interval: 0.55, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 0.9, delay: 0.0, pulse: 1 },
             WaveGroup { enemy_type: EnemyType::Jellyfish, count: 4, interval: 0.7, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 2, interval: 1.0, delay: 1.0, pulse: 2 },
         ]},
     ]
 }
@@ -847,7 +856,7 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
     match hero_type {
         HeroType::SacredMaiden => HeroStats {
             name: "Aethon",
-            hp: 300.0, damage: 12.0, attack_speed: 1.2,
+            hp: 320.0, damage: 13.0, attack_speed: 1.2,
             attack_range: 2.5, move_speed: 5.0,
             model_path: "models/heroes/sacred-maiden.glb",
             model_scale: 1.0, model_rotation_x: 0.0, model_y_offset: 0.0,
@@ -860,7 +869,7 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
         },
         HeroType::IceHulk => HeroStats {
             name: "Cryo",
-            hp: 600.0, damage: 20.0, attack_speed: 0.7,
+            hp: 500.0, damage: 14.0, attack_speed: 0.7,
             attack_range: 2.0, move_speed: 3.5,
             model_path: "models/heroes/ice-hulk.glb",
             model_scale: 1.2, model_rotation_x: 0.0, model_y_offset: 1.2,
@@ -873,7 +882,7 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
         },
         HeroType::NorthernOutsider => HeroStats {
             name: "Gorath",
-            hp: 250.0, damage: 18.0, attack_speed: 0.7,
+            hp: 250.0, damage: 15.0, attack_speed: 1.4,
             attack_range: 2.5, move_speed: 6.0,
             model_path: "models/heroes/northern-outsider.glb",
             model_scale: 0.009, model_rotation_x: 0.0, model_y_offset: 0.0,
@@ -886,7 +895,7 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
         },
         HeroType::Pharaoh => HeroStats {
             name: "Voltra",
-            hp: 350.0, damage: 15.0, attack_speed: 1.0,
+            hp: 350.0, damage: 14.0, attack_speed: 1.0,
             attack_range: 3.0, move_speed: 4.5,
             model_path: "models/heroes/pharaoh.glb",
             model_scale: 0.015, model_rotation_x: std::f32::consts::FRAC_PI_2, model_y_offset: 1.5,
@@ -899,7 +908,7 @@ pub fn hero_stats(hero_type: HeroType) -> HeroStats {
         },
         HeroType::ScarletMagus => HeroStats {
             name: "Ignis",
-            hp: 200.0, damage: 25.0, attack_speed: 0.8,
+            hp: 220.0, damage: 22.0, attack_speed: 1.0,
             attack_range: 5.0, move_speed: 4.0,
             model_path: "models/heroes/scarlet-magus.glb",
             model_scale: 1.0, model_rotation_x: 0.0, model_y_offset: 0.0,
@@ -959,6 +968,8 @@ pub fn level2_hero_spawn() -> Vec3 {
 
 /// 10 waves for Level 2 — harder mix, GiantWorm boss finale.
 pub fn level2_waves() -> Vec<WaveDefinition> {
+    // Smooth ~1.30x growth. L2 assumes the player has already cleared L1,
+    // so enemy types introduce faster than on L1.
     vec![
         // Wave 1 — warm up
         WaveDefinition { early_call_bonus: 10, groups: vec![
@@ -967,58 +978,74 @@ pub fn level2_waves() -> Vec<WaveDefinition> {
         // Wave 2 — fast rush
         WaveDefinition { early_call_bonus: 10, groups: vec![
             WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 6, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Amoeba, count: 4, interval: 0.7, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.7, delay: 0.0, pulse: 1 },
         ]},
-        // Wave 3 — armored push
+        // Wave 3 — introduce Trilobite (gently, no Nautilus yet)
         WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 8, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 3, interval: 1.2, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 6, interval: 0.7, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 3, interval: 0.6, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 2, interval: 0.9, delay: 0.0, pulse: 1 },
         ]},
-        // Wave 4 — flying swarm
+        // Wave 4 — introduce flying
         WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 6, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 5, interval: 0.5, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.6, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 4, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 3, interval: 0.8, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 2, interval: 0.8, delay: 1.0, pulse: 1 },
         ]},
-        // Wave 5 — healers + tanks
+        // Wave 5 — introduce Nautilus (single, gentle)
         WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 5, interval: 1.0, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 3, interval: 1.0, delay: 1.5, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 6, interval: 0.6, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 6, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 4, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 3, interval: 0.8, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 2, interval: 0.8, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 1, interval: 1.2, delay: 1.0, pulse: 1 },
         ]},
-        // Wave 6 — mixed assault
+        // Wave 6 — introduce healer
         WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 10, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 4, interval: 0.8, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 1.0, delay: 2.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 5, interval: 0.45, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 3, interval: 0.7, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 2, interval: 0.8, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 2, interval: 1.0, delay: 0.5, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 1, interval: 1.0, delay: 1.5, pulse: 1 },
         ]},
-        // Wave 7 — heavy armor + healer support
+        // Wave 7 — steady pressure
         WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 8, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 4, interval: 0.8, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 8, interval: 0.5, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 6, interval: 0.45, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 6, interval: 0.4, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 4, interval: 0.6, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 3, interval: 0.7, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 2, interval: 1.0, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 1, interval: 1.0, delay: 1.0, pulse: 2 },
         ]},
         // Wave 8 — relentless
         WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 12, interval: 0.3, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 6, interval: 0.6, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 6, interval: 0.8, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 7, interval: 0.4, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 7, interval: 0.35, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 5, interval: 0.55, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 3, interval: 0.7, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 3, interval: 0.9, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 2, interval: 1.0, delay: 1.0, pulse: 2 },
         ]},
         // Wave 9 — everything
         WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 6, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 3, interval: 1.0, delay: 1.5, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 8, interval: 0.4, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 5, interval: 0.7, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: EnemyType::Trilobite, count: 10, interval: 0.5, delay: 1.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 8, interval: 0.35, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 8, interval: 0.3, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 6, interval: 0.5, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 4, interval: 0.6, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 0.8, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 2, interval: 1.0, delay: 1.0, pulse: 2 },
         ]},
         // Wave 10 — GiantWorm boss + escort
         WaveDefinition { early_call_bonus: 40, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 1.0, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 2, interval: 1.0, delay: 1.5, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Amoeba, count: 5, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 8, interval: 0.35, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: EnemyType::Trilobite, count: 6, interval: 0.55, delay: 0.0, pulse: 0 },
             WaveGroup { enemy_type: EnemyType::GiantWorm, count: 1, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::SeaScorpion, count: 8, interval: 0.4, delay: 1.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 5, interval: 0.6, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 0.8, delay: 1.5, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Nautilus, count: 4, interval: 0.8, delay: 1.0, pulse: 1 },
+            WaveGroup { enemy_type: EnemyType::Jellyfish, count: 4, interval: 0.6, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: EnemyType::Sporebloom, count: 2, interval: 1.0, delay: 1.5, pulse: 2 },
         ]},
     ]
 }
@@ -1056,55 +1083,14 @@ pub fn level3_build_spots() -> Vec<Vec3> {
 }
 
 pub fn level3_waves() -> Vec<WaveDefinition> {
-    vec![
-        WaveDefinition { early_call_bonus: 10, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Stegosaurus, count: 6, interval: 1.0, delay: 0.0, pulse: 0 },
-        ]},
-        WaveDefinition { early_call_bonus: 10, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Stegosaurus, count: 8, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 3, interval: 0.6, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Parasaur, count: 8, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 5, interval: 0.5, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Stegosaurus, count: 6, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 2, interval: 1.2, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 8, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 3, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 3, interval: 0.8, delay: 1.5, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Parasaur, count: 10, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::CompyHealer, count: 2, interval: 1.0, delay: 1.5, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 4, interval: 1.0, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Stegosaurus, count: 8, interval: 0.6, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 4, interval: 0.7, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 6, interval: 0.4, delay: 1.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 5, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::CompyHealer, count: 3, interval: 0.8, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 10, interval: 0.3, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Parasaur, count: 12, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 4, interval: 0.8, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 5, interval: 0.6, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: EnemyType::CompyHealer, count: 3, interval: 0.8, delay: 1.0, pulse: 2 },
-        ]},
-        WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 6, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::CompyHealer, count: 3, interval: 0.8, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 10, interval: 0.3, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 5, interval: 0.5, delay: 0.0, pulse: 2 },
-        ]},
-    ]
+    make_waves(&WaveRoster {
+        grunt: EnemyType::Stegosaurus,
+        fast: EnemyType::Raptor,
+        tank: EnemyType::Triceratops,
+        flyer: EnemyType::Pterodactyl,
+        healer: EnemyType::CompyHealer,
+        boss: None,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1138,57 +1124,14 @@ pub fn level4_build_spots() -> Vec<Vec3> {
 }
 
 pub fn level4_waves() -> Vec<WaveDefinition> {
-    vec![
-        WaveDefinition { early_call_bonus: 10, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Parasaur, count: 8, interval: 0.8, delay: 0.0, pulse: 0 },
-        ]},
-        WaveDefinition { early_call_bonus: 10, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 6, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Stegosaurus, count: 6, interval: 0.7, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 4, interval: 1.0, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 6, interval: 0.4, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 5, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Parasaur, count: 8, interval: 0.5, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 5, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::CompyHealer, count: 3, interval: 0.8, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 8, interval: 0.3, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Stegosaurus, count: 10, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 5, interval: 0.6, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 4, interval: 1.0, delay: 1.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 12, interval: 0.3, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 6, interval: 0.7, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::CompyHealer, count: 3, interval: 0.8, delay: 1.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Parasaur, count: 12, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 6, interval: 0.5, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 5, interval: 0.8, delay: 0.0, pulse: 2 },
-        ]},
-        WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 8, interval: 0.6, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::CompyHealer, count: 4, interval: 0.7, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 12, interval: 0.3, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 6, interval: 0.5, delay: 0.0, pulse: 2 },
-        ]},
-        // Wave 10 — T-Rex boss
-        WaveDefinition { early_call_bonus: 40, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Triceratops, count: 4, interval: 0.8, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::CompyHealer, count: 2, interval: 1.0, delay: 1.5, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::TRex, count: 1, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Raptor, count: 10, interval: 0.3, delay: 1.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Pterodactyl, count: 5, interval: 0.5, delay: 0.0, pulse: 2 },
-        ]},
-    ]
+    make_waves(&WaveRoster {
+        grunt: EnemyType::Parasaur,
+        fast: EnemyType::Raptor,
+        tank: EnemyType::Triceratops,
+        flyer: EnemyType::Pterodactyl,
+        healer: EnemyType::CompyHealer,
+        boss: Some(EnemyType::TRex),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1223,56 +1166,14 @@ pub fn level5_build_spots() -> Vec<Vec3> {
 }
 
 pub fn level5_waves() -> Vec<WaveDefinition> {
-    vec![
-        WaveDefinition { early_call_bonus: 10, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 8, interval: 0.8, delay: 0.0, pulse: 0 },
-        ]},
-        WaveDefinition { early_call_bonus: 10, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 6, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Dodo, count: 4, interval: 0.5, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 6, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 8, interval: 0.6, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 3, interval: 1.2, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Dodo, count: 6, interval: 0.4, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 8, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 4, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 3, interval: 0.8, delay: 1.5, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 8, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 3, interval: 0.8, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 5, interval: 0.8, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 12, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 4, interval: 0.7, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 4, interval: 0.8, delay: 1.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 6, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 3, interval: 0.8, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 10, interval: 0.3, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 5, interval: 0.6, delay: 0.0, pulse: 2 },
-        ]},
-        WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 18, interval: 0.25, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 7, interval: 0.5, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 4, interval: 0.7, delay: 0.5, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 6, interval: 0.45, delay: 0.0, pulse: 2 },
-        ]},
-        WaveDefinition { early_call_bonus: 35, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 8, interval: 0.6, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 4, interval: 0.7, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 15, interval: 0.25, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 7, interval: 0.45, delay: 0.0, pulse: 2 },
-        ]},
-    ]
+    make_waves(&WaveRoster {
+        grunt: EnemyType::Caveman,
+        fast: EnemyType::Sabertooth,
+        tank: EnemyType::Mammoth,
+        flyer: EnemyType::GiantEagle,
+        healer: EnemyType::Shaman,
+        boss: None,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1308,60 +1209,14 @@ pub fn level6_build_spots() -> Vec<Vec3> {
 }
 
 pub fn level6_waves() -> Vec<WaveDefinition> {
-    vec![
-        WaveDefinition { early_call_bonus: 10, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 10, interval: 0.7, delay: 0.0, pulse: 0 },
-        ]},
-        WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 8, interval: 0.4, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 6, interval: 0.6, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 4, interval: 1.0, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Dodo, count: 8, interval: 0.4, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 10, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 4, interval: 0.7, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 3, interval: 1.0, delay: 1.5, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 6, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 3, interval: 0.8, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 10, interval: 0.3, delay: 0.0, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Dodo, count: 12, interval: 0.3, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 5, interval: 0.8, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 5, interval: 0.6, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 3, interval: 0.8, delay: 1.0, pulse: 2 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Caveman, count: 15, interval: 0.3, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 6, interval: 0.6, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 4, interval: 0.7, delay: 0.5, pulse: 1 },
-        ]},
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 10, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 5, interval: 0.6, delay: 1.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 7, interval: 0.45, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 15, interval: 0.25, delay: 0.0, pulse: 2 },
-        ]},
-        WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 18, interval: 0.18, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 8, interval: 0.5, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 7, interval: 0.45, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 5, interval: 0.6, delay: 0.5, pulse: 2 },
-        ]},
-        // Wave 10 — Woolly Rhino boss
-        WaveDefinition { early_call_bonus: 40, groups: vec![
-            WaveGroup { enemy_type: EnemyType::Mammoth, count: 5, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::Shaman, count: 3, interval: 0.8, delay: 1.5, pulse: 0 },
-            WaveGroup { enemy_type: EnemyType::WoollyRhino, count: 1, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::Sabertooth, count: 12, interval: 0.25, delay: 1.0, pulse: 1 },
-            WaveGroup { enemy_type: EnemyType::GiantEagle, count: 6, interval: 0.45, delay: 0.0, pulse: 2 },
-        ]},
-    ]
+    make_waves(&WaveRoster {
+        grunt: EnemyType::Caveman,
+        fast: EnemyType::Sabertooth,
+        tank: EnemyType::Mammoth,
+        flyer: EnemyType::GiantEagle,
+        healer: EnemyType::Shaman,
+        boss: Some(EnemyType::WoollyRhino),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -1398,64 +1253,68 @@ pub fn make_waves(r: &WaveRoster) -> Vec<WaveDefinition> {
         ]}
     };
 
+    // Design goal: smooth HP growth ~1.3-1.4x per wave, no "new enemy" cliffs.
+    // Flyers introduced at W5, healers at W6 — same pacing as before but counts
+    // grow monotonically instead of spiking at W5/W7.
     vec![
         // Wave 1: 8 grunts
         WaveDefinition { early_call_bonus: 10, groups: vec![
             WaveGroup { enemy_type: r.grunt, count: 8, interval: 0.8, delay: 0.0, pulse: 0 },
         ]},
-        // Wave 2: 6 grunts + 3 fast
+        // Wave 2: 6 grunts + 4 fast
         WaveDefinition { early_call_bonus: 10, groups: vec![
             WaveGroup { enemy_type: r.grunt, count: 6, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.fast, count: 3, interval: 0.5, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.fast, count: 4, interval: 0.5, delay: 0.0, pulse: 1 },
         ]},
         // Wave 3: 8 grunts + 4 fast
         WaveDefinition { early_call_bonus: 15, groups: vec![
             WaveGroup { enemy_type: r.grunt, count: 8, interval: 0.6, delay: 0.0, pulse: 0 },
             WaveGroup { enemy_type: r.fast, count: 4, interval: 0.5, delay: 0.0, pulse: 1 },
         ]},
-        // Wave 4: 5 grunts + 3 fast + 2 tank
+        // Wave 4: 7 grunts + 4 fast + 1 tank  (introduce tank gently)
         WaveDefinition { early_call_bonus: 15, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 5, interval: 0.7, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.fast, count: 3, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.tank, count: 2, interval: 1.2, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.grunt, count: 7, interval: 0.6, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.fast, count: 4, interval: 0.5, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.tank, count: 1, interval: 1.2, delay: 0.0, pulse: 1 },
         ]},
-        // Wave 5: 8 grunts + 4 fast + 3 tank + 2 flyer
+        // Wave 5: 6 grunts + 4 fast + 2 tank + 1 flyer  (flyer intro)
+        WaveDefinition { early_call_bonus: 20, groups: vec![
+            WaveGroup { enemy_type: r.grunt, count: 6, interval: 0.55, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.fast, count: 4, interval: 0.45, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.tank, count: 2, interval: 1.1, delay: 0.5, pulse: 1 },
+            WaveGroup { enemy_type: r.flyer, count: 1, interval: 0.8, delay: 0.0, pulse: 2 },
+        ]},
+        // Wave 6: 8 grunts + 5 fast + 2 tank + 2 flyer + 1 healer  (healer intro)
         WaveDefinition { early_call_bonus: 20, groups: vec![
             WaveGroup { enemy_type: r.grunt, count: 8, interval: 0.5, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.fast, count: 4, interval: 0.4, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.tank, count: 3, interval: 1.0, delay: 1.0, pulse: 1 },
-            WaveGroup { enemy_type: r.flyer, count: 2, interval: 0.8, delay: 0.0, pulse: 2 },
-        ]},
-        // Wave 6: 10 grunts + 5 fast + 3 tank + 2 healer
-        WaveDefinition { early_call_bonus: 20, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 10, interval: 0.5, delay: 0.0, pulse: 0 },
             WaveGroup { enemy_type: r.fast, count: 5, interval: 0.4, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.tank, count: 3, interval: 1.0, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.healer, count: 2, interval: 1.0, delay: 1.5, pulse: 1 },
+            WaveGroup { enemy_type: r.tank, count: 2, interval: 1.0, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.flyer, count: 2, interval: 0.7, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: r.healer, count: 1, interval: 1.0, delay: 1.0, pulse: 2 },
         ]},
-        // Wave 7: 14 grunts + 7 fast + 5 tank + 4 flyer + 3 healer
+        // Wave 7: 8 grunts + 6 fast + 3 tank + 3 flyer + 2 healer  (steady growth, no cliff)
         WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 14, interval: 0.35, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.grunt, count: 8, interval: 0.45, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.fast, count: 6, interval: 0.35, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.tank, count: 3, interval: 0.9, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.flyer, count: 3, interval: 0.6, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: r.healer, count: 2, interval: 0.9, delay: 1.0, pulse: 2 },
+        ]},
+        // Wave 8: 10 grunts + 7 fast + 4 tank + 4 flyer + 2 healer
+        WaveDefinition { early_call_bonus: 25, groups: vec![
+            WaveGroup { enemy_type: r.grunt, count: 10, interval: 0.4, delay: 0.0, pulse: 0 },
             WaveGroup { enemy_type: r.fast, count: 7, interval: 0.3, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.tank, count: 5, interval: 0.7, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.flyer, count: 4, interval: 0.6, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: r.healer, count: 3, interval: 0.8, delay: 1.0, pulse: 2 },
+            WaveGroup { enemy_type: r.tank, count: 4, interval: 0.7, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.flyer, count: 4, interval: 0.5, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: r.healer, count: 2, interval: 0.8, delay: 1.0, pulse: 2 },
         ]},
-        // Wave 8: 15 grunts + 10 fast + 6 tank + 5 flyer + 3 healer
-        WaveDefinition { early_call_bonus: 25, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 15, interval: 0.35, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.fast, count: 10, interval: 0.25, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.tank, count: 6, interval: 0.6, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.flyer, count: 5, interval: 0.5, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: r.healer, count: 3, interval: 0.8, delay: 1.0, pulse: 2 },
-        ]},
-        // Wave 9: 18 grunts + 10 fast + 7 tank + 6 flyer + 4 healer
+        // Wave 9: 12 grunts + 8 fast + 5 tank + 5 flyer + 3 healer
         WaveDefinition { early_call_bonus: 30, groups: vec![
-            WaveGroup { enemy_type: r.grunt, count: 18, interval: 0.25, delay: 0.0, pulse: 0 },
-            WaveGroup { enemy_type: r.fast, count: 10, interval: 0.25, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.tank, count: 7, interval: 0.5, delay: 0.0, pulse: 1 },
-            WaveGroup { enemy_type: r.flyer, count: 6, interval: 0.45, delay: 0.0, pulse: 2 },
-            WaveGroup { enemy_type: r.healer, count: 4, interval: 0.7, delay: 1.0, pulse: 2 },
+            WaveGroup { enemy_type: r.grunt, count: 12, interval: 0.3, delay: 0.0, pulse: 0 },
+            WaveGroup { enemy_type: r.fast, count: 8, interval: 0.28, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.tank, count: 5, interval: 0.6, delay: 0.0, pulse: 1 },
+            WaveGroup { enemy_type: r.flyer, count: 5, interval: 0.45, delay: 0.0, pulse: 2 },
+            WaveGroup { enemy_type: r.healer, count: 3, interval: 0.8, delay: 1.0, pulse: 2 },
         ]},
         // Wave 10: boss + escort (or heavy wave if no boss)
         wave10,
@@ -1721,8 +1580,8 @@ pub struct LevelStartConfig {
 
 pub fn level_start_config(level: u32) -> LevelStartConfig {
     match level {
-        1  => LevelStartConfig { starting_gold: 220, lives: 20, max_waves: 10, wave_hp_scale: 0.10, wave_speed_scale: 0.015 },
-        2  => LevelStartConfig { starting_gold: 220, lives: 20, max_waves: 10, wave_hp_scale: 0.10, wave_speed_scale: 0.015 },
+        1  => LevelStartConfig { starting_gold: 170, lives: 20, max_waves: 10, wave_hp_scale: 0.10, wave_speed_scale: 0.015 },
+        2  => LevelStartConfig { starting_gold: 200, lives: 20, max_waves: 10, wave_hp_scale: 0.10, wave_speed_scale: 0.015 },
         3  => LevelStartConfig { starting_gold: 220, lives: 18, max_waves: 10, wave_hp_scale: 0.12, wave_speed_scale: 0.02 },
         4  => LevelStartConfig { starting_gold: 240, lives: 18, max_waves: 10, wave_hp_scale: 0.14, wave_speed_scale: 0.02 },
         5  => LevelStartConfig { starting_gold: 250, lives: 18, max_waves: 10, wave_hp_scale: 0.14, wave_speed_scale: 0.02 },
@@ -1842,6 +1701,47 @@ pub const ALL_HERO_TYPES: [HeroType; 5] = [
     HeroType::ScarletMagus,
     HeroType::SacredMaiden, // Aethon — title-character capstone, last to unlock
 ];
+
+// ---------------------------------------------------------------------------
+// Hero element affinity
+// ---------------------------------------------------------------------------
+//
+// Each hero (except Aethon) is aligned with one tower element, and grants a
+// damage bonus to towers of that element while active. Aethon is the capstone
+// hero and grants a smaller bonus to *all* elements instead.
+//
+// Balance target: a single-element hero buffs ~25-33% of a typical board by
+// +20%, which works out to ~5-7% overall. Aethon's flat +8% to all lands in
+// the same neighborhood regardless of composition.
+
+/// +20% tower damage for a hero's aligned element.
+pub const HERO_ELEMENT_BONUS: f32 = 0.20;
+/// +8% tower damage for every element when Aethon is active.
+pub const HERO_ALL_ELEMENT_BONUS: f32 = 0.08;
+
+/// The tower element a hero buffs. `None` means "all elements" (Aethon).
+pub fn hero_element(hero: HeroType) -> Option<Element> {
+    match hero {
+        HeroType::IceHulk => Some(Element::Ice),
+        HeroType::NorthernOutsider => Some(Element::Earth),
+        HeroType::Pharaoh => Some(Element::Lightning),
+        HeroType::ScarletMagus => Some(Element::Fire),
+        HeroType::SacredMaiden => None,
+    }
+}
+
+/// Damage multiplier a hero applies to a tower of the given element.
+/// Pass `no_hero = true` for the hero-less mode (always 1.0).
+pub fn hero_element_multiplier(hero: HeroType, no_hero: bool, tower_element: Element) -> f32 {
+    if no_hero {
+        return 1.0;
+    }
+    match hero_element(hero) {
+        None => 1.0 + HERO_ALL_ELEMENT_BONUS,
+        Some(e) if e == tower_element => 1.0 + HERO_ELEMENT_BONUS,
+        _ => 1.0,
+    }
+}
 
 /// Returns the level that must be beaten (stars > 0) to unlock a hero.
 /// Players start with no hero (towers only) and earn each one as they progress.

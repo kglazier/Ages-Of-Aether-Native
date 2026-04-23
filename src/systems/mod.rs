@@ -15,6 +15,7 @@ pub mod player_ability;
 pub mod setup;
 pub mod showcase;
 pub mod tower_spec;
+pub mod tutorial;
 mod wave;
 
 pub use camera::CameraFocus;
@@ -112,8 +113,16 @@ impl Plugin for GamePlugin {
             hero::spawn_hero
                 .after(setup::setup_level)
                 .run_if(|needs: Res<crate::resources::NeedsFreshSetup>| needs.0),
-            clear_fresh_setup.after(hero::spawn_hero),
+            camera::start_level_intro
+                .after(hero::spawn_hero)
+                .run_if(|needs: Res<crate::resources::NeedsFreshSetup>| needs.0),
+            clear_fresh_setup
+                .after(camera::start_level_intro),
         ));
+        app.add_systems(
+            OnEnter(AppState::Playing),
+            tutorial::activate_tutorial_on_enter.after(clear_fresh_setup),
+        );
 
         app.add_systems(
             Update,
@@ -253,6 +262,32 @@ impl Plugin for GamePlugin {
                 debug::handle_debug_buttons,
                 apply_game_speed,
             )
+                .run_if(in_state(AppState::Playing)),
+        );
+
+        // Tutorial systems — only meaningful during first-play L1.
+        // Cleanup runs AFTER advance so the overlay is despawned the same frame
+        // the tutorial completes (e.g. when the wave button is pressed).
+        app.add_systems(
+            Update,
+            (
+                tutorial::track_rally_placement.in_set(GameSet::Input),
+                tutorial::advance_tutorial.in_set(GameSet::Cleanup),
+                tutorial::cleanup_overlay_on_complete
+                    .in_set(GameSet::Cleanup)
+                    .after(tutorial::advance_tutorial),
+                tutorial::spawn_overlay.in_set(GameSet::Visual),
+                tutorial::update_overlay_text.in_set(GameSet::Visual),
+            )
+                .run_if(in_state(AppState::Playing)),
+        );
+
+        // Camera intro zoom — ticks in Input set, before camera_control applies focus.
+        app.add_systems(
+            Update,
+            camera::tick_level_intro
+                .in_set(GameSet::Input)
+                .before(camera::camera_control)
                 .run_if(in_state(AppState::Playing)),
         );
 

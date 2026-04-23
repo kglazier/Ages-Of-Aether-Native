@@ -11,6 +11,9 @@ pub struct SaveData {
     pub aether_gems: u32,
     /// Upgrade levels for each meta-progression upgrade (0 = not purchased). Index maps to UpgradeKind ordinal.
     pub upgrade_levels: Vec<u8>,
+    /// Whether the first-play tutorial has been completed (or skipped).
+    #[serde(default)]
+    pub tutorial_completed: bool,
 }
 
 impl Default for SaveData {
@@ -19,6 +22,7 @@ impl Default for SaveData {
             level_stars: vec![0; 10],
             aether_gems: 0,
             upgrade_levels: vec![0; 5],
+            tutorial_completed: false,
         }
     }
 }
@@ -76,6 +80,16 @@ impl SaveData {
     /// Hero ability cooldown multiplier from TacticalMastery upgrade.
     pub fn cooldown_mult(&self) -> f32 {
         1.0 - 0.05 * self.upgrade_level(UpgradeKind::TacticalMastery) as f32
+    }
+}
+
+/// Writes the save data to disk. Call after updating any persistent field.
+pub fn write_save(save: &SaveData) {
+    let path = save_file_path();
+    if let Ok(json) = serde_json::to_string_pretty(save) {
+        if let Err(e) = std::fs::write(&path, json) {
+            warn!("Failed to write save file: {}", e);
+        }
     }
 }
 

@@ -38,25 +38,34 @@ pub fn camera_control(
     time: Res<Time>,
     mut touch_state: Local<TouchState>,
     mut shake: ResMut<CameraShake>,
+    intro: Res<CameraIntro>,
 ) {
     let Ok(mut transform) = camera_q.get_single_mut() else {
         return;
     };
 
+    // During the level-start zoom intro, only the intro system drives focus.
+    // We still write the camera transform below so the animation renders.
+    let skip_input = intro.active;
+    if skip_input {
+        // Drain scroll events so they don't accumulate behind the intro.
+        scroll_events.clear();
+    }
+
     let speed = 15.0 * time.delta_secs();
 
     // --- Keyboard pan: move the focus point along screen-relative X/Z ---
     let mut pan = Vec3::ZERO;
-    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
+    if !skip_input && (keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp)) {
         pan.z -= 1.0;
     }
-    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
+    if !skip_input && (keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown)) {
         pan.z += 1.0;
     }
-    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft) {
+    if !skip_input && (keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft)) {
         pan.x -= 1.0;
     }
-    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) {
+    if !skip_input && (keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight)) {
         pan.x += 1.0;
     }
     if pan != Vec3::ZERO {
@@ -64,16 +73,22 @@ pub fn camera_control(
     }
 
     // --- Scroll wheel zoom (desktop) ---
-    for ev in scroll_events.read() {
-        let zoom_delta = match ev.unit {
-            MouseScrollUnit::Line => ev.y * 2.0,
-            MouseScrollUnit::Pixel => ev.y * 0.05,
-        };
-        focus.distance = (focus.distance - zoom_delta).clamp(10.0, 45.0);
+    if !skip_input {
+        for ev in scroll_events.read() {
+            let zoom_delta = match ev.unit {
+                MouseScrollUnit::Line => ev.y * 2.0,
+                MouseScrollUnit::Pixel => ev.y * 0.05,
+            };
+            focus.distance = (focus.distance - zoom_delta).clamp(10.0, 45.0);
+        }
     }
 
     // --- Touch input (mobile) ---
-    let active_touches: Vec<&bevy::input::touch::Touch> = touches.iter().collect();
+    let active_touches: Vec<&bevy::input::touch::Touch> = if skip_input {
+        Vec::new()
+    } else {
+        touches.iter().collect()
+    };
 
     match active_touches.len() {
         1 => {
@@ -135,6 +150,101 @@ pub fn camera_control(
     }
 
     transform.look_at(focus.target, Vec3::Y);
+}
+
+// ---------------------------------------------------------------------------
+// Level-start zoom intro
+// ---------------------------------------------------------------------------
+//
+// On entering Playing, the camera starts pulled back showing most of the map,
+// then eases in over ~1.2s to the hero spawn area. Any input (tap, touch,
+// keyboard, scroll) cancels the intro immediately.
+
+#[derive(Resource, Default)]
+pub struct CameraIntro {
+    pub active: bool,
+    pub elapsed: f32,
+    pub duration: f32,
+    pub from_target: Vec3,
+    pub from_distance: f32,
+    pub to_target: Vec3,
+    pub to_distance: f32,
+}
+
+impl CameraIntro {
+    pub fn start(&mut self, from_target: Vec3, from_distance: f32, to_target: Vec3, to_distance: f32) {
+        self.active = true;
+        self.elapsed = 0.0;
+        self.duration = 1.2;
+        self.from_target = from_target;
+        self.from_distance = from_distance;
+        self.to_target = to_target;
+        self.to_distance = to_distance;
+    }
+
+    pub fn finish(&mut self, focus: &mut CameraFocus) {
+        if self.active {
+            focus.target = self.to_target;
+            focus.distance = self.to_distance;
+            self.active = false;
+        }
+    }
+}
+
+/// Seed the camera intro on level entry. Starts from a wide shot (distance 42)
+/// centered over the map, eases to the default focus near the hero spawn.
+pub fn start_level_intro(
+    mut intro: ResMut<CameraIntro>,
+    mut focus: ResMut<CameraFocus>,
+    current_level: Res<crate::resources::CurrentLevel>,
+) {
+    let hero_spawn = crate::data::level_hero_spawn(current_level.0);
+    // Start shot: centered over map, far back
+    let wide_target = Vec3::new(0.0, 0.0, 0.0);
+    let wide_distance = 42.0;
+    // End shot: near hero spawn, default distance
+    let close_target = Vec3::new(hero_spawn.x * 0.5, 0.0, hero_spawn.z * 0.5);
+    let close_distance = 27.0;
+
+    // Snap focus to wide so camera_control doesn't render a frame at the old state.
+    focus.target = wide_target;
+    focus.distance = wide_distance;
+    intro.start(wide_target, wide_distance, close_target, close_distance);
+}
+
+/// Drives the zoom intro. Runs before `camera_control` and overrides focus.
+pub fn tick_level_intro(
+    time: Res<Time>,
+    mut intro: ResMut<CameraIntro>,
+    mut focus: ResMut<CameraFocus>,
+    touches: Res<Touches>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+) {
+    if !intro.active {
+        return;
+    }
+
+    // Skip on any input.
+    let any_input = touches.iter().next().is_some()
+        || keys.get_pressed().next().is_some()
+        || mouse.any_just_pressed([MouseButton::Left, MouseButton::Right]);
+    if any_input {
+        intro.finish(&mut focus);
+        return;
+    }
+
+    intro.elapsed += time.delta_secs();
+    let t = (intro.elapsed / intro.duration).clamp(0.0, 1.0);
+    // easeOutCubic
+    let e = 1.0 - (1.0 - t).powi(3);
+
+    focus.target = intro.from_target.lerp(intro.to_target, e);
+    focus.distance = intro.from_distance + (intro.to_distance - intro.from_distance) * e;
+
+    if t >= 1.0 {
+        intro.finish(&mut focus);
+    }
 }
 
 /// Resource for camera shake — any system can write to trigger a shake.

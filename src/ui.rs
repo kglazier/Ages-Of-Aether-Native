@@ -765,7 +765,19 @@ fn handle_wave_button(
     mut wave_btn: ResMut<WaveButtonPressed>,
     wave: Res<WaveState>,
     game: Res<GameData>,
+    tutorial: Res<crate::systems::tutorial::TutorialState>,
 ) {
+    // Tutorial gate: block wave starts until the player reaches the TapStartWave step
+    // (i.e. after they've placed their first rally point).
+    use crate::systems::tutorial::TutorialStep;
+    let tutorial_blocks = match tutorial.step {
+        TutorialStep::Inactive | TutorialStep::Completed | TutorialStep::TapStartWave => false,
+        _ => true,
+    };
+    if tutorial_blocks {
+        return;
+    }
+
     for interaction in &interactions {
         if *interaction != Interaction::Pressed {
             continue;
@@ -794,6 +806,7 @@ fn manage_panels(
     camera_query: Query<(&Camera, &GlobalTransform)>,
     windows: Query<&Window>,
     game: Res<GameData>,
+    tutorial: Res<crate::systems::tutorial::TutorialState>,
 ) {
     if !selection.is_changed() {
         return;
@@ -823,7 +836,8 @@ fn manage_panels(
         Selection::BuildSpot(spot_entity) => {
             if let Ok(spot_transform) = spots.get(spot_entity) {
                 let screen_pos = world_to_screen(camera, cam_transform, spot_transform.translation, window_width, window_height);
-                spawn_build_menu(&mut commands, &game, screen_pos);
+                let tutorial_active = crate::systems::tutorial::is_tutorial_active(&tutorial);
+                spawn_build_menu(&mut commands, &game, screen_pos, tutorial_active);
             }
         }
         Selection::Tower(tower_entity) => {
@@ -876,7 +890,7 @@ fn world_to_screen(
 // Build menu — 4 tower type buttons
 // ---------------------------------------------------------------------------
 
-fn spawn_build_menu(commands: &mut Commands, game: &GameData, screen_pos: (f32, f32)) {
+fn spawn_build_menu(commands: &mut Commands, game: &GameData, screen_pos: (f32, f32), tutorial_active: bool) {
     let tower_options = [
         (Element::Lightning, "Lightning", Color::srgb(1.0, 0.93, 0.27)),
         (Element::Earth, "Earth", Color::srgb(0.53, 0.67, 0.27)),
@@ -910,7 +924,14 @@ fn spawn_build_menu(commands: &mut Commands, game: &GameData, screen_pos: (f32, 
             for (element, name, color) in tower_options {
                 let cost = tower_base_cost(element);
                 let affordable = game.gold >= cost;
-                let bg = if affordable {
+                // During the tutorial, only Earth is selectable.
+                let locked_by_tutorial = tutorial_active && element != Element::Earth;
+                let highlight = tutorial_active && element == Element::Earth;
+                let bg = if locked_by_tutorial {
+                    Color::srgba(0.08, 0.05, 0.10, 0.5)
+                } else if highlight {
+                    Color::srgba(0.35, 0.45, 0.20, 0.95)
+                } else if affordable {
                     Color::srgba(0.2, 0.15, 0.25, 0.9)
                 } else {
                     Color::srgba(0.15, 0.1, 0.15, 0.5)
@@ -932,10 +953,17 @@ fn spawn_build_menu(commands: &mut Commands, game: &GameData, screen_pos: (f32, 
                         BorderRadius::all(Val::Px(6.0)),
                     ))
                     .with_children(|btn| {
+                        let text_color = if locked_by_tutorial {
+                            Color::srgb(0.3, 0.3, 0.3)
+                        } else if affordable {
+                            color
+                        } else {
+                            Color::srgb(0.4, 0.4, 0.4)
+                        };
                         btn.spawn((
                             Text::new(format!("{} ({}g)", name, cost)),
                             TextFont { font_size: 18.0, ..default() },
-                            TextColor(if affordable { color } else { Color::srgb(0.4, 0.4, 0.4) }),
+                            TextColor(text_color),
                         ));
                     });
             }
@@ -1208,6 +1236,9 @@ fn handle_build_buttons(
     audio_assets: Option<Res<crate::systems::audio::AudioAssets>>,
     save_data: Option<Res<crate::save::SaveData>>,
     vol_settings: Res<VolumeSettings>,
+    active_hero: Res<ActiveHeroType>,
+    no_hero: Res<NoHeroSelected>,
+    tutorial: Res<crate::systems::tutorial::TutorialState>,
 ) {
     for (interaction, build_btn) in &interactions {
         if *interaction != Interaction::Pressed {
@@ -1219,6 +1250,12 @@ fn handle_build_buttons(
         };
 
         let element = build_btn.0;
+
+        // Tutorial gate: force Earth on the first-play lesson
+        if crate::systems::tutorial::is_tutorial_active(&tutorial) && element != Element::Earth {
+            continue;
+        }
+
         let stats = tower_stats(element, 0);
 
         if game.gold < stats.cost {
@@ -1258,7 +1295,11 @@ fn handle_build_buttons(
                 elapsed: 0.0,
             },
             AttackRange(stats.range * save_data.as_ref().map(|s| s.tower_range_mult()).unwrap_or(1.0)),
-            AttackDamage(stats.damage * save_data.as_ref().map(|s| s.tower_damage_mult()).unwrap_or(1.0)),
+            AttackDamage(
+                stats.damage
+                    * save_data.as_ref().map(|s| s.tower_damage_mult()).unwrap_or(1.0)
+                    * crate::data::hero_element_multiplier(active_hero.0, no_hero.0, element),
+            ),
             GameWorldEntity,
             PlacementBounce {
                 duration: 0.4,
@@ -1306,6 +1347,8 @@ fn handle_tower_buttons(
     audio_assets: Option<Res<crate::systems::audio::AudioAssets>>,
     save_data: Option<Res<crate::save::SaveData>>,
     vol_settings: Res<VolumeSettings>,
+    active_hero: Res<ActiveHeroType>,
+    no_hero: Res<NoHeroSelected>,
 ) {
     let Selection::Tower(tower_entity) = *selection else {
         return;
@@ -1331,7 +1374,9 @@ fn handle_tower_buttons(
             game.gold -= new_stats.cost;
             investment.0 += new_stats.cost;
             level.0 += 1;
-            damage.0 = new_stats.damage * save_data.as_ref().map(|s| s.tower_damage_mult()).unwrap_or(1.0);
+            damage.0 = new_stats.damage
+                * save_data.as_ref().map(|s| s.tower_damage_mult()).unwrap_or(1.0)
+                * crate::data::hero_element_multiplier(active_hero.0, no_hero.0, *element);
             range.0 = new_stats.range * save_data.as_ref().map(|s| s.tower_range_mult()).unwrap_or(1.0);
             timer.cooldown = 1.0 / new_stats.attack_speed;
 
@@ -3323,9 +3368,26 @@ fn build_hero_select_screen(
                                 TextColor(Color::srgb(0.8, 0.8, 0.5)),
                             ));
                             card.spawn((
-                                Text::new(format!("HP:{:.0} DMG:{:.0} SPD:{:.1}", stats.hp, stats.damage, stats.move_speed)),
+                                Text::new(format!("HP:{:.0} DPS:{:.0} MOV:{:.1}", stats.hp, stats.damage * stats.attack_speed, stats.move_speed)),
                                 TextFont { font_size: 9.0, ..default() },
                                 TextColor(Color::srgb(0.5, 0.7, 0.5)),
+                            ));
+                            let (affinity_text, affinity_color) = match crate::data::hero_element(*hero_type) {
+                                Some(crate::components::Element::Fire) =>
+                                    ("+20% Fire towers", Color::srgb(1.0, 0.5, 0.2)),
+                                Some(crate::components::Element::Ice) =>
+                                    ("+20% Ice towers", Color::srgb(0.4, 0.8, 1.0)),
+                                Some(crate::components::Element::Lightning) =>
+                                    ("+20% Lightning towers", Color::srgb(1.0, 0.9, 0.3)),
+                                Some(crate::components::Element::Earth) =>
+                                    ("+20% Earth towers", Color::srgb(0.6, 0.8, 0.4)),
+                                None =>
+                                    ("+8% all towers", Color::srgb(1.0, 0.85, 0.4)),
+                            };
+                            card.spawn((
+                                Text::new(affinity_text),
+                                TextFont { font_size: 9.0, ..default() },
+                                TextColor(affinity_color),
                             ));
                             if selected {
                                 card.spawn((

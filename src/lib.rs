@@ -61,6 +61,7 @@ pub fn main() {
         .add_systems(OnEnter(states::AppState::GameOver), save::save_on_level_complete)
         .init_resource::<systems::CameraFocus>()
         .init_resource::<systems::camera::CameraShake>()
+        .init_resource::<systems::camera::CameraIntro>()
         .init_resource::<systems::debug::DebugState>()
         .init_resource::<systems::debug::AdminMode>()
         .init_resource::<systems::hero_ability::AbilityActivated>()
@@ -68,6 +69,7 @@ pub fn main() {
         .init_resource::<systems::tower_spec::SpecUpgradeRequested>()
         .init_resource::<resources::PlayerAbilities>()
         .init_resource::<resources::PlayerAbilityTargeting>()
+        .init_resource::<systems::tutorial::TutorialState>()
         .add_plugins(systems::GamePlugin)
         .add_plugins(ui::UiPlugin)
         .run();
