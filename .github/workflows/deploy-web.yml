@@ -1,0 +1,63 @@
+name: Deploy Web Build to Vercel
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux build deps (alsa, udev for Bevy)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev libudev-dev pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: wasm32
+
+      - name: Install wasm-bindgen-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@0.2.95
+
+      - name: Build WASM (release)
+        run: cargo build --target wasm32-unknown-unknown --release --bin ages-of-aether
+
+      - name: Generate JS bindings + assemble dist/
+        run: |
+          mkdir -p dist
+          wasm-bindgen \
+            --out-dir dist \
+            --out-name ages-of-aether \
+            --target web \
+            --no-typescript \
+            target/wasm32-unknown-unknown/release/ages-of-aether.wasm
+          cp web/index.html dist/
+          cp web/vercel.json dist/
+          cp -r assets dist/assets
+
+      - name: Deploy to Vercel
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./dist
+          vercel-args: '--prod'

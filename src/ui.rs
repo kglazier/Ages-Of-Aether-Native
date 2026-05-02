@@ -3638,15 +3638,7 @@ fn handle_upgrade_shop(
                 save.aether_gems -= cost;
                 save.upgrade_levels[idx] = current_level + 1;
 
-                // Persist
-                let path = if cfg!(target_os = "android") {
-                    "/data/data/com.agesofaether/files/save.json".to_string()
-                } else {
-                    "save.json".to_string()
-                };
-                if let Ok(json) = serde_json::to_string_pretty(&**save) {
-                    let _ = std::fs::write(&path, json);
-                }
+                crate::save::write_save(&**save);
 
                 // Rebuild shop screen
                 for entity in &roots {

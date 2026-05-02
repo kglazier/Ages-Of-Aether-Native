@@ -27,12 +27,10 @@ impl Default for SaveData {
     }
 }
 
-/// Returns the save file path.
+#[cfg(not(target_arch = "wasm32"))]
 fn save_file_path() -> String {
     #[cfg(target_os = "android")]
     {
-        // Android internal storage — ndk_glue provides the path
-        // Fallback to a relative path that maps to the app's internal dir
         "/data/data/com.agesofaether/files/save.json".to_string()
     }
     #[cfg(not(target_os = "android"))]
@@ -41,15 +39,41 @@ fn save_file_path() -> String {
     }
 }
 
-/// Loads save data from disk on startup. Inserts default if file missing or corrupt.
+#[cfg(not(target_arch = "wasm32"))]
+fn read_save_string() -> Option<String> {
+    std::fs::read_to_string(&save_file_path()).ok()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn write_save_string(json: &str) {
+    if let Err(e) = std::fs::write(&save_file_path(), json) {
+        warn!("Failed to write save file: {}", e);
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+const WEB_SAVE_KEY: &str = "ages-of-aether/save";
+
+#[cfg(target_arch = "wasm32")]
+fn read_save_string() -> Option<String> {
+    let storage = web_sys::window()?.local_storage().ok()??;
+    storage.get_item(WEB_SAVE_KEY).ok()?
+}
+
+#[cfg(target_arch = "wasm32")]
+fn write_save_string(json: &str) {
+    let Some(window) = web_sys::window() else { return };
+    let Ok(Some(storage)) = window.local_storage() else { return };
+    if let Err(e) = storage.set_item(WEB_SAVE_KEY, json) {
+        warn!("Failed to write save to localStorage: {:?}", e);
+    }
+}
+
+/// Loads save data on startup. Inserts default if missing or corrupt.
 pub fn load_save_on_startup(mut commands: Commands) {
-    let path = save_file_path();
-    let data = std::fs::read_to_string(&path)
-        .ok()
+    let mut data = read_save_string()
         .and_then(|s| serde_json::from_str::<SaveData>(&s).ok())
         .unwrap_or_default();
-    // Ensure vectors are long enough (handles save from older version with fewer levels)
-    let mut data = data;
     data.level_stars.resize(10, 0);
     data.upgrade_levels.resize(5, 0);
     commands.insert_resource(data);
@@ -83,13 +107,10 @@ impl SaveData {
     }
 }
 
-/// Writes the save data to disk. Call after updating any persistent field.
+/// Writes the save data. Call after updating any persistent field.
 pub fn write_save(save: &SaveData) {
-    let path = save_file_path();
     if let Ok(json) = serde_json::to_string_pretty(save) {
-        if let Err(e) = std::fs::write(&path, json) {
-            warn!("Failed to write save file: {}", e);
-        }
+        write_save_string(&json);
     }
 }
 
@@ -119,11 +140,7 @@ pub fn save_on_level_complete(
         info!("Level {} complete! {} stars (+{} gems)", current_level.0, outcome.stars, gems);
     }
 
-    // Write to disk
-    let path = save_file_path();
     if let Ok(json) = serde_json::to_string_pretty(&*save) {
-        if let Err(e) = std::fs::write(&path, json) {
-            warn!("Failed to write save file: {}", e);
-        }
+        write_save_string(&json);
     }
 }

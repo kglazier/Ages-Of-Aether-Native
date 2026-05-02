@@ -72,9 +72,11 @@ name = "ages-of-aether"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "console_error_panic_hook",
  "rand",
  "serde",
  "serde_json",
+ "web-sys",
 ]
 
 [[package]]

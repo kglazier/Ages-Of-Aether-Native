@@ -14,7 +14,6 @@ path = "src/main.rs"
 
 [dependencies]
 bevy = { version = "0.15", default-features = false, features = [
-    "android-native-activity",
     "animation",
     "bevy_asset",
     "bevy_audio",
@@ -32,16 +31,42 @@ bevy = { version = "0.15", default-features = false, features = [
     "default_font",
     "hdr",
     "jpeg",
-    "multi_threaded",
     "png",
     "tonemapping_luts",
     "vorbis",
     "wav",
-    "x11",
 ] }
 rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Android: native activity glue
+[target.'cfg(target_os = "android")'.dependencies]
+bevy = { version = "0.15", default-features = false, features = [
+    "android-native-activity",
+    "multi_threaded",
+] }
+
+# Linux desktop: X11 windowing
+[target.'cfg(target_os = "linux")'.dependencies]
+bevy = { version = "0.15", default-features = false, features = [
+    "x11",
+    "multi_threaded",
+] }
+
+# Other desktop (Windows, macOS): keep multi_threaded for performance
+[target.'cfg(all(not(target_os = "android"), not(target_os = "linux"), not(target_arch = "wasm32")))'.dependencies]
+bevy = { version = "0.15", default-features = false, features = [
+    "multi_threaded",
+] }
+
+# Web (WASM): WebGL2 backend, no multi_threaded (browsers don't support std threads)
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+bevy = { version = "0.15", default-features = false, features = [
+    "webgl2",
+] }
+web-sys = { version = "0.3", features = ["Window", "Storage"] }
+console_error_panic_hook = "0.1"
 
 # Faster compile times during development
 [profile.dev]
