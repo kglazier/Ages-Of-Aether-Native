@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use bevy::asset::AssetMetaCheck;
 use bevy::diagnostic::FrameTimeDiagnosticsPlugin;
 
 pub mod components;
@@ -17,25 +18,35 @@ pub fn main() {
     {
         use bevy::winit::WinitSettings;
         use bevy::window::WindowMode;
-        app.add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Ages of Aether".into(),
-                resizable: false,
-                mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+        app.add_plugins(DefaultPlugins
+            .set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Ages of Aether".into(),
+                    resizable: false,
+                    mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+                    ..default()
+                }),
                 ..default()
-            }),
-            ..default()
-        }));
+            })
+            .set(AssetPlugin {
+                meta_check: AssetMetaCheck::Never,
+                ..default()
+            }));
         app.insert_resource(WinitSettings::mobile());
     }
 
     #[cfg(not(target_os = "android"))]
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+    app.add_plugins(DefaultPlugins
+        .set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Ages of Aether".into(),
                 resolution: (1280., 720.).into(),
                 ..default()
             }),
+            ..default()
+        })
+        .set(AssetPlugin {
+            meta_check: AssetMetaCheck::Never,
             ..default()
         }));
 

@@ -38,15 +38,23 @@
   <div id="loading">Loading Ages of Aether…</div>
   <script type="module">
     import init from './ages-of-aether.js';
+    const removeLoader = () => {
+      const el = document.getElementById('loading');
+      if (el) el.remove();
+    };
+    // winit on web throws a "control flow" exception to unwind the event loop.
+    // That isn't a real error — game keeps running. Hide the loader either way.
     init('./ages-of-aether_bg.wasm')
-      .then(() => {
-        const el = document.getElementById('loading');
-        if (el) el.remove();
-      })
+      .then(removeLoader)
       .catch((err) => {
-        const el = document.getElementById('loading');
-        if (el) el.textContent = 'Failed to load: ' + err;
-        console.error(err);
+        const msg = err && err.message ? err.message : String(err);
+        if (msg.includes('Using exceptions for control flow')) {
+          removeLoader();
+        } else {
+          const el = document.getElementById('loading');
+          if (el) el.textContent = 'Failed to load: ' + msg;
+          console.error(err);
+        }
       });
   </script>
 </body>
