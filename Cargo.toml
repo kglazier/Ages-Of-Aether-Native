@@ -67,6 +67,8 @@ bevy = { version = "0.15", default-features = false, features = [
 ] }
 web-sys = { version = "0.3", features = ["Window", "Storage"] }
 console_error_panic_hook = "0.1"
+# getrandom 0.3 dropped default wasm32-unknown-unknown support; opt into the JS backend
+getrandom = { version = "0.3", features = ["wasm_js"] }
 
 # Faster compile times during development
 [profile.dev]

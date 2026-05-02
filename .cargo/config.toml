@@ -1,2 +1,5 @@
 [target.aarch64-linux-android]
 rustflags = ["-C", "link-arg=-lc++abi"]
+
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']
