@@ -12,6 +12,40 @@ const PULSE_MAX_WAIT: f32 = 8.0;
 /// Start next pulse when active enemies drop to this threshold.
 const PULSE_ENEMY_THRESHOLD: u32 = 2;
 
+/// When the player presses Send Wave, fully heal living golems and clear any
+/// pending respawn timers on Earth towers so dead golems respawn immediately.
+/// Runs before `wave_spawner` so it can read the press before it's consumed.
+pub fn heal_and_respawn_golems_on_wave_start(
+    mut commands: Commands,
+    wave_btn: Res<WaveButtonPressed>,
+    wave: Res<WaveState>,
+    game: Res<GameData>,
+    mut golems: Query<&mut Health, With<Golem>>,
+    timed_towers: Query<Entity, (With<Tower>, With<crate::systems::golem::GolemRespawnTimer>)>,
+) {
+    if !wave_btn.0 {
+        return;
+    }
+    // Mirror the gates in handle_wave_button so we only react when the press
+    // would actually start (or call early) a wave.
+    let can_start =
+        matches!(wave.phase, WavePhase::Idle) && game.wave_number < game.max_waves;
+    let can_call_early =
+        matches!(wave.phase, WavePhase::Active) && game.wave_number + 1 < game.max_waves;
+    if !can_start && !can_call_early {
+        return;
+    }
+
+    for mut health in &mut golems {
+        health.current = health.max;
+    }
+    for tower in &timed_towers {
+        commands
+            .entity(tower)
+            .remove::<crate::systems::golem::GolemRespawnTimer>();
+    }
+}
+
 /// Heal hero to full HP at the start of each wave.
 pub fn heal_hero_on_wave_start(
     mut hero_q: Query<&mut Health, (With<Hero>, Without<HeroRespawnTimer>)>,

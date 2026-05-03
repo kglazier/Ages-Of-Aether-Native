@@ -6,7 +6,7 @@ pub mod debug;
 mod enemy_anim;
 mod game_over;
 pub mod hero_ability;
-mod golem;
+pub mod golem;
 mod hero;
 mod input;
 pub mod logbook_preview;
@@ -224,6 +224,12 @@ impl Plugin for GamePlugin {
         app.add_systems(
             Update,
             combat::tower_face_target.in_set(GameSet::Visual),
+        );
+        app.add_systems(
+            Update,
+            wave::heal_and_respawn_golems_on_wave_start
+                .in_set(GameSet::Spawning)
+                .before(wave::wave_spawner),
         );
         app.add_systems(
             Update,

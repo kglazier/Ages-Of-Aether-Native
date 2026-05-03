@@ -1351,6 +1351,7 @@ fn handle_tower_buttons(
     vol_settings: Res<VolumeSettings>,
     active_hero: Res<ActiveHeroType>,
     no_hero: Res<NoHeroSelected>,
+    mut golems: Query<(&GolemOwner, &mut Health), With<Golem>>,
 ) {
     let Selection::Tower(tower_entity) = *selection else {
         return;
@@ -1384,6 +1385,17 @@ fn handle_tower_buttons(
 
             // Trigger upgrade flash
             commands.entity(tower_entity).insert(UpgradeFlash { remaining: 0.3 });
+
+            // Heal this tower's living golems and clear any pending respawn
+            // timer so dead golems repop immediately on upgrade.
+            for (owner, mut health) in &mut golems {
+                if owner.0 == tower_entity {
+                    health.current = health.max;
+                }
+            }
+            commands
+                .entity(tower_entity)
+                .remove::<crate::systems::golem::GolemRespawnTimer>();
         }
 
         // Play upgrade SFX
