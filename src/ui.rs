@@ -836,8 +836,9 @@ fn manage_panels(
         Selection::BuildSpot(spot_entity) => {
             if let Ok(spot_transform) = spots.get(spot_entity) {
                 let screen_pos = world_to_screen(camera, cam_transform, spot_transform.translation, window_width, window_height);
-                let tutorial_active = crate::systems::tutorial::is_tutorial_active(&tutorial);
-                spawn_build_menu(&mut commands, &game, screen_pos, tutorial_active);
+                let tutorial_locks_builds =
+                    crate::systems::tutorial::is_tutorial_locking_builds(&tutorial);
+                spawn_build_menu(&mut commands, &game, screen_pos, tutorial_locks_builds);
             }
         }
         Selection::Tower(tower_entity) => {
@@ -1251,8 +1252,9 @@ fn handle_build_buttons(
 
         let element = build_btn.0;
 
-        // Tutorial gate: force Earth on the first-play lesson
-        if crate::systems::tutorial::is_tutorial_active(&tutorial) && element != Element::Earth {
+        // Tutorial gate: force Earth only during the early build-tower lesson.
+        // After the Earth tower is placed, the player is free to build any tower.
+        if crate::systems::tutorial::is_tutorial_locking_builds(&tutorial) && element != Element::Earth {
             continue;
         }
 
@@ -1440,13 +1442,46 @@ fn handle_tower_buttons(
 /// Dynamically update upgrade/spec button colors based on current gold.
 fn update_button_affordability(
     game: Res<GameData>,
+    tutorial: Res<crate::systems::tutorial::TutorialState>,
     mut upgrade_q: Query<(&UpgradeButton, &mut BackgroundColor, &Children)>,
-    mut spec_q: Query<(&SpecButton, &mut BackgroundColor, &Children), (Without<UpgradeButton>, Without<SpecUpgradeButton>)>,
-    mut spec_up_q: Query<(&SpecUpgradeButton, &mut BackgroundColor, &Children), (Without<UpgradeButton>, Without<SpecButton>)>,
+    mut spec_q: Query<(&SpecButton, &mut BackgroundColor, &Children), (Without<UpgradeButton>, Without<SpecUpgradeButton>, Without<BuildTowerButton>)>,
+    mut spec_up_q: Query<(&SpecUpgradeButton, &mut BackgroundColor, &Children), (Without<UpgradeButton>, Without<SpecButton>, Without<BuildTowerButton>)>,
+    mut build_q: Query<(&BuildTowerButton, &mut BackgroundColor, &Children), (Without<UpgradeButton>, Without<SpecButton>, Without<SpecUpgradeButton>)>,
     mut text_colors: Query<&mut TextColor>,
 ) {
-    if !game.is_changed() {
+    if !game.is_changed() && !tutorial.is_changed() {
         return;
+    }
+
+    let tutorial_locks_builds = crate::systems::tutorial::is_tutorial_locking_builds(&tutorial);
+    for (btn, mut bg, children) in &mut build_q {
+        let element = btn.0;
+        let cost = tower_base_cost(element);
+        let affordable = game.gold >= cost;
+        let locked_by_tutorial = tutorial_locks_builds && element != Element::Earth;
+        let highlight = tutorial_locks_builds && element == Element::Earth;
+        bg.0 = if locked_by_tutorial {
+            Color::srgba(0.08, 0.05, 0.10, 0.5)
+        } else if highlight {
+            Color::srgba(0.35, 0.45, 0.20, 0.95)
+        } else if affordable {
+            Color::srgba(0.2, 0.15, 0.25, 0.9)
+        } else {
+            Color::srgba(0.15, 0.1, 0.15, 0.5)
+        };
+        let new_text_color = if locked_by_tutorial {
+            Color::srgb(0.3, 0.3, 0.3)
+        } else if affordable {
+            element_color(element)
+        } else {
+            Color::srgb(0.4, 0.4, 0.4)
+        };
+        for child in children.iter() {
+            if let Ok(mut tc) = text_colors.get_mut(*child) {
+                tc.0 = new_text_color;
+                break;
+            }
+        }
     }
 
     for (btn, mut bg, children) in &mut upgrade_q {

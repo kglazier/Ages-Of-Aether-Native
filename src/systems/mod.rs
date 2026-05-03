@@ -223,6 +223,10 @@ impl Plugin for GamePlugin {
         );
         app.add_systems(
             Update,
+            combat::tower_face_target.in_set(GameSet::Visual),
+        );
+        app.add_systems(
+            Update,
             (
                 combat::hide_ground_meshes.in_set(GameSet::Cleanup),
                 tower_spec::apply_specialization.in_set(GameSet::Combat),

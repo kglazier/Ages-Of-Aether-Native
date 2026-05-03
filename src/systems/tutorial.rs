@@ -75,6 +75,16 @@ pub fn is_tutorial_active(tutorial: &TutorialState) -> bool {
     !matches!(tutorial.step, TutorialStep::Inactive | TutorialStep::Completed)
 }
 
+/// Whether the tutorial should currently force tower selection to Earth only.
+/// True only during the build-spot/build-earth steps; once the Earth tower is
+/// placed, the player is free to build any tower they can afford.
+pub fn is_tutorial_locking_builds(tutorial: &TutorialState) -> bool {
+    matches!(
+        tutorial.step,
+        TutorialStep::TapBuildSpot | TutorialStep::BuildEarth
+    )
+}
+
 // ---------------------------------------------------------------------------
 // Step progression (drives off game state changes)
 // ---------------------------------------------------------------------------

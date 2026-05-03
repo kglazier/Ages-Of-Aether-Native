@@ -3,6 +3,56 @@ use crate::components::*;
 use crate::data::*;
 use crate::resources::*;
 
+/// Each frame, rotate every tower to face its current best target (the enemy
+/// furthest along the path within range). Skips towers with no target in range
+/// and towers that don't fire projectiles (e.g. Bramble Grove). Mirrors the
+/// look-at math the original JS game used so turrets visibly track enemies.
+pub fn tower_face_target(
+    mut towers: Query<
+        (&mut Transform, &AttackRange, Option<&TowerSpec>),
+        With<Tower>,
+    >,
+    enemies: Query<(&Transform, &PathFollower), (With<Enemy>, Without<Tower>)>,
+    time: Res<Time>,
+) {
+    use crate::data::TowerSpecialization;
+
+    // Slerp factor per frame — clamped so it converges quickly without snapping.
+    let lerp_t = (10.0 * time.delta_secs()).clamp(0.0, 1.0);
+
+    for (mut tower_transform, range, spec) in &mut towers {
+        if let Some(s) = spec {
+            if matches!(s.0, TowerSpecialization::BrambleGrove) {
+                continue;
+            }
+        }
+
+        // Pick the same target tower_targeting would: enemy furthest along path within range
+        let mut best: Option<(Vec3, f32)> = None;
+        for (enemy_transform, follower) in &enemies {
+            let dist = tower_transform
+                .translation
+                .distance(enemy_transform.translation);
+            if dist <= range.0 {
+                let progress = follower.segment as f32 + follower.progress;
+                if best.is_none() || progress > best.unwrap().1 {
+                    best = Some((enemy_transform.translation, progress));
+                }
+            }
+        }
+
+        let Some((target_pos, _)) = best else { continue };
+
+        let look = target_pos - tower_transform.translation;
+        let look_xz = Vec2::new(look.x, look.z);
+        if look_xz.length_squared() < 0.0001 {
+            continue;
+        }
+        let target_rot = Quat::from_rotation_y(f32::atan2(look_xz.x, look_xz.y));
+        tower_transform.rotation = tower_transform.rotation.slerp(target_rot, lerp_t);
+    }
+}
+
 /// Each tower finds the nearest enemy in range and fires a projectile.
 pub fn tower_targeting(
     mut commands: Commands,
