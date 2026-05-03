@@ -12,15 +12,26 @@ const PULSE_MAX_WAIT: f32 = 8.0;
 /// Start next pulse when active enemies drop to this threshold.
 const PULSE_ENEMY_THRESHOLD: u32 = 2;
 
-/// When the player presses Send Wave, fully heal living golems and clear any
-/// pending respawn timers on Earth towers so dead golems respawn immediately.
-/// Runs before `wave_spawner` so it can read the press before it's consumed.
-pub fn heal_and_respawn_golems_on_wave_start(
+/// When the player presses Send Wave, fully heal living golems and the hero,
+/// instantly revive any dead hero, and clear pending respawn timers on Earth
+/// towers so dead golems repop immediately. Runs before `wave_spawner` so it
+/// can read the press before it's consumed.
+pub fn heal_and_respawn_units_on_wave_start(
     mut commands: Commands,
     wave_btn: Res<WaveButtonPressed>,
     wave: Res<WaveState>,
     game: Res<GameData>,
-    mut golems: Query<&mut Health, With<Golem>>,
+    active_hero: Res<crate::resources::ActiveHeroType>,
+    mut golems: Query<&mut Health, (With<Golem>, Without<Hero>)>,
+    mut heroes: Query<
+        (
+            Entity,
+            &mut Health,
+            &mut Transform,
+            Option<&HeroRespawnTimer>,
+        ),
+        With<Hero>,
+    >,
     timed_towers: Query<Entity, (With<Tower>, With<crate::systems::golem::GolemRespawnTimer>)>,
 ) {
     if !wave_btn.0 {
@@ -44,22 +55,16 @@ pub fn heal_and_respawn_golems_on_wave_start(
             .entity(tower)
             .remove::<crate::systems::golem::GolemRespawnTimer>();
     }
-}
-
-/// Heal hero to full HP at the start of each wave.
-pub fn heal_hero_on_wave_start(
-    mut hero_q: Query<&mut Health, (With<Hero>, Without<HeroRespawnTimer>)>,
-    wave: Res<WaveState>,
-    mut healed_this_wave: Local<bool>,
-) {
-    if matches!(wave.phase, WavePhase::Idle) {
-        *healed_this_wave = false;
-        return;
-    }
-    if !*healed_this_wave && matches!(wave.phase, WavePhase::Spawning) {
-        *healed_this_wave = true;
-        for mut health in &mut hero_q {
-            health.current = health.max;
+    let stats = crate::data::hero_stats(active_hero.0);
+    for (entity, mut health, mut transform, respawn) in &mut heroes {
+        health.max = stats.hp;
+        health.current = stats.hp;
+        if let Some(timer) = respawn {
+            transform.translation = timer.death_pos;
+            commands
+                .entity(entity)
+                .remove::<HeroRespawnTimer>()
+                .insert(Visibility::Visible);
         }
     }
 }

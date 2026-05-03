@@ -131,7 +131,6 @@ impl Plugin for GamePlugin {
                 input::handle_world_click.in_set(GameSet::Input),
                 wave::auto_wave_tick.in_set(GameSet::Input),
                 wave::wave_spawner.in_set(GameSet::Spawning),
-                wave::heal_hero_on_wave_start.in_set(GameSet::Spawning),
                 golem::spawn_golems.in_set(GameSet::Spawning),
                 golem::setup_golem_animations.in_set(GameSet::Spawning),
                 golem::play_golem_animations.in_set(GameSet::Spawning),
@@ -227,7 +226,7 @@ impl Plugin for GamePlugin {
         );
         app.add_systems(
             Update,
-            wave::heal_and_respawn_golems_on_wave_start
+            wave::heal_and_respawn_units_on_wave_start
                 .in_set(GameSet::Spawning)
                 .before(wave::wave_spawner),
         );
