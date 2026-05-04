@@ -62,6 +62,7 @@ pub fn main() {
         .init_resource::<resources::HeroMoveCommand>()
         .init_resource::<resources::ActiveHeroType>()
         .init_resource::<resources::NoHeroSelected>()
+        .init_resource::<resources::NewlyUnlockedHero>()
         .init_resource::<resources::AdminUnlocks>()
         .init_resource::<resources::CurrentLevel>()
         .init_resource::<resources::Difficulty>()

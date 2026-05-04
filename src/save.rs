@@ -119,6 +119,9 @@ pub fn save_on_level_complete(
     outcome: Res<crate::states::GameOutcome>,
     current_level: Res<crate::resources::CurrentLevel>,
     mut save: ResMut<SaveData>,
+    mut newly_unlocked: ResMut<crate::resources::NewlyUnlockedHero>,
+    mut active_hero: ResMut<crate::resources::ActiveHeroType>,
+    mut no_hero: ResMut<crate::resources::NoHeroSelected>,
 ) {
     if !outcome.victory || outcome.stars == 0 {
         return;
@@ -127,6 +130,19 @@ pub fn save_on_level_complete(
     let idx = (current_level.0 as usize).saturating_sub(1);
     if idx >= save.level_stars.len() {
         return;
+    }
+
+    // Detect first-time hero unlocks: a hero whose unlock-level == this level
+    // and whose level entry was 0 stars before this completion.
+    let was_first_clear = save.level_stars[idx] == 0;
+    let mut just_unlocked: Option<crate::data::HeroType> = None;
+    if was_first_clear {
+        for hero in crate::data::ALL_HERO_TYPES {
+            if crate::data::hero_unlock_level(hero) == current_level.0 {
+                just_unlocked = Some(hero);
+                break;
+            }
+        }
     }
 
     // Only update if new star count is better
@@ -142,5 +158,14 @@ pub fn save_on_level_complete(
 
     if let Ok(json) = serde_json::to_string_pretty(&*save) {
         write_save_string(&json);
+    }
+
+    // Auto-select the newly earned hero so "Next Level" picks them up,
+    // and stash it for the GameOver screen's notification.
+    if let Some(hero) = just_unlocked {
+        active_hero.0 = hero;
+        no_hero.0 = false;
+        newly_unlocked.0 = Some(hero);
+        info!("Hero unlocked: {:?}", hero);
     }
 }

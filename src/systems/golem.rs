@@ -13,9 +13,10 @@ pub struct GolemClipsNeedStrip {
     pub stripped: bool,
 }
 
-/// Timer placed on a tower when its golems die. Prevents instant respawn.
-#[derive(Component)]
-pub struct GolemRespawnTimer(pub f32);
+/// Per-slot respawn delay used by Earth towers. `GolemSlots` (in components.rs)
+/// holds a timer per slot so each golem respawns on its own schedule rather
+/// than waiting for both siblings to die together.
+pub const GOLEM_RESPAWN_TIME: f32 = 12.0;
 
 /// Tracks which animation is currently playing and stores graph node indices.
 #[derive(Component)]
@@ -34,42 +35,91 @@ pub enum GolemAnimKind {
     Attack,
 }
 
-/// When an Earth tower exists without golems and its respawn timer is up, spawn golems.
-/// Mountain King spec: 1 elite golem (3x HP, 2x damage).
-/// Bramble Grove spec: no golems at all (uses aura).
+/// Each Earth tower owns N golem slots. Slots respawn independently — a
+/// surviving sibling no longer holds the dead one back. Mountain King spec
+/// uses 1 slot (elite golem). Bramble Grove spec uses 0 (aura only).
 pub fn spawn_golems(
     mut commands: Commands,
-    earth_towers: Query<(Entity, &Element, &AttackDamage, &BuildSpotRef, Option<&GolemRespawnTimer>, Option<&TowerSpec>, Option<&TowerRallyPoint>), With<Tower>>,
-    existing_golems: Query<&GolemOwner, With<Golem>>,
+    mut earth_towers: Query<
+        (
+            Entity,
+            &Element,
+            &AttackDamage,
+            &BuildSpotRef,
+            Option<&mut GolemSlots>,
+            Option<&TowerSpec>,
+            Option<&TowerRallyPoint>,
+        ),
+        With<Tower>,
+    >,
+    existing_golems: Query<(&GolemOwner, &GolemSlot), With<Golem>>,
     spots: Query<&Transform, With<BuildSpot>>,
     asset_server: Res<AssetServer>,
     time: Res<Time>,
     level_path: Res<crate::resources::LevelPath>,
 ) {
-    for (tower_entity, element, damage, spot_ref, respawn_timer, spec, tower_rally) in &earth_towers {
+    let dt = time.delta_secs();
+
+    for (tower_entity, element, damage, spot_ref, slots, spec, tower_rally) in &mut earth_towers {
         if *element != Element::Earth {
             continue;
         }
-
-        // Bramble Grove doesn't spawn golems
         if spec.is_some_and(|s| s.0 == crate::data::TowerSpecialization::BrambleGrove) {
             continue;
         }
 
-        let has_golems = existing_golems.iter().any(|owner| owner.0 == tower_entity);
-        if has_golems {
-            continue;
-        }
+        let is_mountain_king =
+            spec.is_some_and(|s| s.0 == crate::data::TowerSpecialization::MountainKing);
+        let golem_count: usize = if is_mountain_king { 1 } else { 2 };
+        let golem_hp = if is_mountain_king { 300.0 } else { 100.0 };
+        let golem_dmg = if is_mountain_king { damage.0 * 2.0 } else { damage.0 };
 
-        // Tick or start respawn timer
-        if let Some(timer) = respawn_timer {
-            if timer.0 > 0.0 {
-                // Still waiting — tick the timer
-                commands.entity(tower_entity).insert(GolemRespawnTimer(timer.0 - time.delta_secs()));
+        // Lazily ensure GolemSlots is on the tower with the right size.
+        let mut owned_slots = match slots {
+            Some(s) => s,
+            None => {
+                commands.entity(tower_entity).insert(GolemSlots {
+                    timers: vec![None; golem_count],
+                });
                 continue;
             }
-            // Timer done — remove it and spawn
-            commands.entity(tower_entity).remove::<GolemRespawnTimer>();
+        };
+        if owned_slots.timers.len() != golem_count {
+            owned_slots.timers.resize(golem_count, None);
+        }
+
+        // Which slots currently have a living golem?
+        let mut alive = vec![false; golem_count];
+        for (owner, slot) in &existing_golems {
+            if owner.0 == tower_entity {
+                let idx = slot.0 as usize;
+                if idx < alive.len() {
+                    alive[idx] = true;
+                }
+            }
+        }
+
+        // Tick timers and decide which slots to spawn this frame.
+        let mut to_spawn: Vec<usize> = Vec::new();
+        for i in 0..golem_count {
+            if alive[i] {
+                continue;
+            }
+            match owned_slots.timers[i] {
+                Some(remaining) => {
+                    let next = remaining - dt;
+                    if next <= 0.0 {
+                        owned_slots.timers[i] = None;
+                        to_spawn.push(i);
+                    } else {
+                        owned_slots.timers[i] = Some(next);
+                    }
+                }
+                None => to_spawn.push(i),
+            }
+        }
+        if to_spawn.is_empty() {
+            continue;
         }
 
         let Ok(spot_transform) = spots.get(spot_ref.0) else {
@@ -100,32 +150,27 @@ pub fn spawn_golems(
             best_pos
         };
 
-        let is_mountain_king = spec.is_some_and(|s| s.0 == crate::data::TowerSpecialization::MountainKing);
-        let golem_count = if is_mountain_king { 1 } else { 2 };
-        let golem_hp = if is_mountain_king { 300.0 } else { 100.0 };
-        let golem_dmg = if is_mountain_king { damage.0 * 2.0 } else { damage.0 };
-
-        for i in 0..golem_count {
-            // Spread golems slightly along the path direction
+        for slot_idx in to_spawn {
             let offset = if golem_count == 1 {
                 Vec3::ZERO
-            } else if i == 0 {
+            } else if slot_idx == 0 {
                 Vec3::new(0.8, 0.0, 0.0)
             } else {
                 Vec3::new(-0.8, 0.0, 0.0)
             };
             let rally = nearest_path_pos + offset;
 
-            // Spawn the skinned mesh scene — animation system will drive the bones
             let scene = asset_server.load("models/golems/golem.glb#Scene0");
             let scale = if is_mountain_king { 80.0 } else { 60.0 };
 
             commands.spawn((
                 SceneRoot(scene),
-                Transform::from_translation(rally + Vec3::new(0.0, GOLEM_Y_OFFSET, 0.0)).with_scale(Vec3::splat(scale)),
+                Transform::from_translation(rally + Vec3::new(0.0, GOLEM_Y_OFFSET, 0.0))
+                    .with_scale(Vec3::splat(scale)),
                 Golem,
                 GolemNeedsAnimation,
                 GolemOwner(tower_entity),
+                GolemSlot(slot_idx as u8),
                 GolemRallyPoint(rally),
                 BlockingEnemy(None),
                 GolemAttack {
@@ -306,60 +351,30 @@ pub fn fix_golem_materials(
     }
 }
 
-/// Assign each golem's BlockingEnemy target (nearest blocked enemy).
-/// Blocking/unblocking is now handled by the unified block_enemies system in hero.rs.
+/// Assign each golem's BlockingEnemy target — the nearest non-flying enemy
+/// within melee engage range. Considers all enemies (not only those already
+/// flagged GolemBlocked) so a freshly spawned golem dropped into a crowd
+/// engages and animates immediately, instead of standing idle for a frame
+/// while `block_enemies` catches up.
 pub fn golem_assign_targets(
-    mut golems: Query<(Entity, &Transform, &mut BlockingEnemy, &GolemOwner), With<Golem>>,
-    enemies: Query<(Entity, &Transform, Option<&Flying>), (With<Enemy>, With<GolemBlocked>)>,
+    mut golems: Query<(&Transform, &mut BlockingEnemy), With<Golem>>,
+    enemies: Query<(Entity, &Transform, Option<&Flying>), (With<Enemy>, Without<Golem>)>,
 ) {
     let engage_range = 3.0;
 
-    // First pass: find nearest blocked enemy for each golem
-    let mut golem_targets: Vec<(Entity, Entity, Option<(Entity, f32)>)> = Vec::new();
-    for (golem_entity, golem_transform, _blocking, owner) in &golems {
+    for (golem_transform, mut blocking) in &mut golems {
         let golem_pos = golem_transform.translation;
         let mut nearest: Option<(Entity, f32)> = None;
         for (enemy_entity, enemy_transform, flying) in &enemies {
-            if flying.is_some() { continue; }
+            if flying.is_some() {
+                continue;
+            }
             let dist = golem_pos.distance(enemy_transform.translation);
-            if dist <= engage_range {
-                if nearest.is_none() || dist < nearest.unwrap().1 {
-                    nearest = Some((enemy_entity, dist));
-                }
+            if dist <= engage_range && nearest.map_or(true, |(_, d)| dist < d) {
+                nearest = Some((enemy_entity, dist));
             }
         }
-        golem_targets.push((golem_entity, owner.0, nearest));
-    }
-
-    // Sibling coordination: if one golem has a target, the other picks nearest too
-    let mut tower_has_target: std::collections::HashMap<Entity, bool> = std::collections::HashMap::new();
-    for &(_golem, owner, ref target) in &golem_targets {
-        if target.is_some() {
-            tower_has_target.insert(owner, true);
-        }
-    }
-
-    for (golem_entity, golem_transform, mut blocking, owner) in &mut golems {
-        let own_target = golem_targets.iter().find(|(e, _, _)| *e == golem_entity);
-        let has_own = own_target.map(|(_, _, t)| t.is_some()).unwrap_or(false);
-
-        if has_own {
-            blocking.0 = own_target.unwrap().2.map(|(e, _)| e);
-        } else if tower_has_target.contains_key(&owner.0) {
-            // Sibling is engaged — pick nearest blocked enemy
-            let golem_pos = golem_transform.translation;
-            let mut best: Option<(Entity, f32)> = None;
-            for (enemy_entity, enemy_transform, flying) in &enemies {
-                if flying.is_some() { continue; }
-                let dist = golem_pos.distance(enemy_transform.translation);
-                if best.is_none() || dist < best.unwrap().1 {
-                    best = Some((enemy_entity, dist));
-                }
-            }
-            blocking.0 = best.map(|(e, _)| e);
-        } else {
-            blocking.0 = None;
-        }
+        blocking.0 = nearest.map(|(e, _)| e);
     }
 }
 
@@ -463,20 +478,29 @@ pub fn enemies_attack_golem(
     }
 }
 
-/// Despawn dead golems and start a 12s respawn timer on the tower.
-/// Reinforcement soldiers just despawn with no respawn timer.
+/// Despawn dead golems and start the per-slot respawn timer on the tower.
+/// Reinforcement soldiers just despawn with no respawn.
 pub fn check_golem_death(
     mut commands: Commands,
-    golems: Query<(Entity, &Health, &GolemOwner, Option<&crate::components::ReinforcementSoldier>), With<Golem>>,
-    towers: Query<Option<&GolemRespawnTimer>, With<Tower>>,
+    golems: Query<
+        (
+            Entity,
+            &Health,
+            &GolemOwner,
+            Option<&GolemSlot>,
+            Option<&crate::components::ReinforcementSoldier>,
+        ),
+        With<Golem>,
+    >,
+    mut towers: Query<&mut GolemSlots, With<Tower>>,
 ) {
-    for (entity, health, owner, is_reinforcement) in &golems {
+    for (entity, health, owner, slot, is_reinforcement) in &golems {
         if health.current <= 0.0 {
-            // Only start respawn timer for tower-owned golems, not reinforcements
             if is_reinforcement.is_none() {
-                if let Ok(existing_timer) = towers.get(owner.0) {
-                    if existing_timer.is_none() {
-                        commands.entity(owner.0).insert(GolemRespawnTimer(12.0));
+                if let (Some(slot), Ok(mut slots)) = (slot, towers.get_mut(owner.0)) {
+                    let idx = slot.0 as usize;
+                    if idx < slots.timers.len() {
+                        slots.timers[idx] = Some(GOLEM_RESPAWN_TIME);
                     }
                 }
             }

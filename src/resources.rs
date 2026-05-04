@@ -148,6 +148,12 @@ impl Default for NoHeroSelected {
     fn default() -> Self { Self(true) }
 }
 
+/// Set on level completion when this victory unlocks a hero for the first
+/// time. Read once by the GameOver screen to render an "earned" notification,
+/// then cleared on screen exit so it doesn't reappear on Play Again.
+#[derive(Resource, Default)]
+pub struct NewlyUnlockedHero(pub Option<crate::data::HeroType>);
+
 /// Volume settings for music and sound effects (0.0–1.0).
 #[derive(Resource)]
 pub struct VolumeSettings {

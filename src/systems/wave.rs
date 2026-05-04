@@ -32,7 +32,7 @@ pub fn heal_and_respawn_units_on_wave_start(
         ),
         With<Hero>,
     >,
-    timed_towers: Query<Entity, (With<Tower>, With<crate::systems::golem::GolemRespawnTimer>)>,
+    mut tower_slots: Query<&mut GolemSlots, With<Tower>>,
 ) {
     if !wave_btn.0 {
         return;
@@ -50,10 +50,10 @@ pub fn heal_and_respawn_units_on_wave_start(
     for mut health in &mut golems {
         health.current = health.max;
     }
-    for tower in &timed_towers {
-        commands
-            .entity(tower)
-            .remove::<crate::systems::golem::GolemRespawnTimer>();
+    for mut slots in &mut tower_slots {
+        for t in &mut slots.timers {
+            *t = None;
+        }
     }
     let stats = crate::data::hero_stats(active_hero.0);
     for (entity, mut health, mut transform, respawn) in &mut heroes {

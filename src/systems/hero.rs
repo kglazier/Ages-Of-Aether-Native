@@ -555,14 +555,23 @@ pub fn block_enemies(
     for (entity, mut transform, flying, was_blocked, block_offset) in &mut enemies {
         if flying.is_some() { continue; }
 
-        // Check if in range of any blocker (XZ distance to ignore Y offsets)
-        // Use hysteresis: smaller range to enter blocked state, larger to exit
-        let enemy_xz = Vec3::new(transform.translation.x, 0.0, transform.translation.z);
+        // Check range using the enemy's *un-offset* position so the random
+        // spread offset can't knock a barely-in-range enemy back out, which
+        // caused the per-frame block/unblock flicker.
         let already_blocked = was_blocked.is_some();
+        let logical_pos = if let Some(off) = block_offset {
+            Vec3::new(
+                transform.translation.x - off.0.x,
+                0.0,
+                transform.translation.z - off.0.z,
+            )
+        } else {
+            Vec3::new(transform.translation.x, 0.0, transform.translation.z)
+        };
         let hysteresis = if already_blocked { 0.3 } else { 0.0 }; // small buffer to prevent flicker
         let in_range = blockers.iter().any(|(pos, range)| {
             let blocker_xz = Vec3::new(pos.x, 0.0, pos.z);
-            blocker_xz.distance(enemy_xz) <= *range + hysteresis
+            blocker_xz.distance(logical_pos) <= *range + hysteresis
         });
 
         if in_range && !already_blocked {

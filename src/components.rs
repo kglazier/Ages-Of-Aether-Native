@@ -170,6 +170,19 @@ pub struct Golem;
 #[derive(Component)]
 pub struct GolemOwner(pub Entity);
 
+/// Which slot index this golem occupies on its owning tower (0-based).
+/// Lets the spawner respawn each slot independently.
+#[derive(Component)]
+pub struct GolemSlot(pub u8);
+
+/// Per-slot respawn state on an Earth tower. Length matches the tower's
+/// expected golem_count. Each entry: `None` = slot is alive or ready to spawn,
+/// `Some(t)` = ticking down for `t` more seconds before respawn.
+#[derive(Component, Default)]
+pub struct GolemSlots {
+    pub timers: Vec<Option<f32>>,
+}
+
 /// Where the golem should stand to block enemies.
 #[derive(Component)]
 pub struct GolemRallyPoint(pub Vec3);

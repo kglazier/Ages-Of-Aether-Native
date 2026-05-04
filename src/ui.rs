@@ -1352,6 +1352,7 @@ fn handle_tower_buttons(
     active_hero: Res<ActiveHeroType>,
     no_hero: Res<NoHeroSelected>,
     mut golems: Query<(&GolemOwner, &mut Health), With<Golem>>,
+    mut tower_slots: Query<&mut GolemSlots, With<Tower>>,
 ) {
     let Selection::Tower(tower_entity) = *selection else {
         return;
@@ -1386,16 +1387,18 @@ fn handle_tower_buttons(
             // Trigger upgrade flash
             commands.entity(tower_entity).insert(UpgradeFlash { remaining: 0.3 });
 
-            // Heal this tower's living golems and clear any pending respawn
-            // timer so dead golems repop immediately on upgrade.
+            // Heal this tower's living golems and clear all per-slot respawn
+            // timers so dead golems repop immediately on upgrade.
             for (owner, mut health) in &mut golems {
                 if owner.0 == tower_entity {
                     health.current = health.max;
                 }
             }
-            commands
-                .entity(tower_entity)
-                .remove::<crate::systems::golem::GolemRespawnTimer>();
+            if let Ok(mut slots) = tower_slots.get_mut(tower_entity) {
+                for t in &mut slots.timers {
+                    *t = None;
+                }
+            }
         }
 
         // Play upgrade SFX
@@ -2189,7 +2192,13 @@ struct NextLevelButton;
 #[derive(Component)]
 struct LevelSelectButton;
 
-fn setup_game_over_screen(mut commands: Commands, outcome: Res<GameOutcome>, game: Res<GameData>, current_level: Res<crate::resources::CurrentLevel>) {
+fn setup_game_over_screen(
+    mut commands: Commands,
+    outcome: Res<GameOutcome>,
+    game: Res<GameData>,
+    current_level: Res<crate::resources::CurrentLevel>,
+    newly_unlocked: Res<crate::resources::NewlyUnlockedHero>,
+) {
     let title = if outcome.victory { "VICTORY!" } else { "DEFEAT" };
     let title_color = if outcome.victory {
         Color::srgb(1.0, 0.85, 0.0)
@@ -2242,6 +2251,45 @@ fn setup_game_over_screen(mut commands: Commands, outcome: Res<GameOutcome>, gam
                 TextFont { font_size: 24.0, ..default() },
                 TextColor(Color::WHITE),
             ));
+
+            // Newly-unlocked hero notification (only on victories that earned a hero).
+            // Spawned as a child of GameOverRoot so OnExit(GameOver) cleans it up
+            // automatically regardless of which button the player presses.
+            if let Some(hero) = newly_unlocked.0 {
+                let info = crate::data::hero_info(hero);
+                parent
+                    .spawn((
+                        Node {
+                            margin: UiRect::top(Val::Px(8.0)),
+                            padding: UiRect::axes(Val::Px(20.0), Val::Px(14.0)),
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            row_gap: Val::Px(4.0),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.18, 0.10, 0.30, 0.95)),
+                        BorderRadius::all(Val::Px(12.0)),
+                        BorderColor(Color::srgb(1.0, 0.85, 0.4)),
+                        Outline::new(Val::Px(2.0), Val::Px(0.0), Color::srgb(1.0, 0.85, 0.4)),
+                    ))
+                    .with_children(|card| {
+                        card.spawn((
+                            Text::new("HERO UNLOCKED!"),
+                            TextFont { font_size: 20.0, ..default() },
+                            TextColor(Color::srgb(1.0, 0.85, 0.4)),
+                        ));
+                        card.spawn((
+                            Text::new(info.name.to_string()),
+                            TextFont { font_size: 28.0, ..default() },
+                            TextColor(Color::WHITE),
+                        ));
+                        card.spawn((
+                            Text::new("Auto-selected for the next level."),
+                            TextFont { font_size: 14.0, ..default() },
+                            TextColor(Color::srgb(0.85, 0.85, 0.95)),
+                        ));
+                    });
+            }
 
             // Button row
             parent
@@ -2393,6 +2441,7 @@ fn cleanup_game_over_screen(
     hud_q: Query<Entity, With<HudRoot>>,
     hero_hud_q: Query<Entity, With<HeroHudRoot>>,
     mut debug_state: Option<ResMut<crate::systems::debug::DebugState>>,
+    mut newly_unlocked: ResMut<crate::resources::NewlyUnlockedHero>,
 ) {
     for entity in &query {
         commands.entity(entity).despawn_recursive();
@@ -2407,6 +2456,9 @@ fn cleanup_game_over_screen(
     if let Some(ref mut ds) = debug_state {
         ds.show_overlay = false;
     }
+    // Consume the hero-unlock notification so the next game-over (e.g. Play
+    // Again on the same level) doesn't re-show it.
+    newly_unlocked.0 = None;
 }
 
 // ---------------------------------------------------------------------------
